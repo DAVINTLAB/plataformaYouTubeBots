@@ -68,7 +68,7 @@ plataformaYouTubeBots/
 ### Pré-requisitos
 
 - Python 3.11+
-- Node.js 20+
+- Node.js 24+
 - Docker (para o banco local)
 
 ### Backend
