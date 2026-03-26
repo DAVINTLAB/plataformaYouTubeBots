@@ -1,0 +1,40 @@
+repos:
+  - repo: local
+    hooks:
+      # Backend
+      - id: ruff-lint
+        name: Ruff lint
+        entry: ruff check
+        language: python
+        types: [python]
+        files: ^backend/
+
+      - id: ruff-format
+        name: Ruff format
+        entry: ruff format --check
+        language: python
+        types: [python]
+        files: ^backend/
+
+      - id: bandit
+        name: Bandit security
+        entry: bandit -r
+        language: python
+        types: [python]
+        files: ^backend/
+        exclude: ^backend/tests/
+
+      # Frontend
+      - id: eslint
+        name: ESLint
+        entry: bash -c 'cd frontend && npx eslint --ext .ts,.tsx'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: prettier
+        name: Prettier
+        entry: bash -c 'cd frontend && npx prettier --check'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|json|css)$
+        pass_filenames: false
