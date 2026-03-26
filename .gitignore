@@ -1,0 +1,134 @@
+# ======================
+# Agentes de IA e Skills
+# ======================
+
+# Claude Code — versionar CLAUDE.md, AGENTS.md e .claude/*.md
+# Ignorar apenas o que é gerado automaticamente em runtime
+.claude/cache/
+.claude/sessions/
+.claude/todos/
+.claude/.last_conversation
+
+# Skills instaladas via npx openskills (geradas, não versionadas — igual node_modules)
+# Remover esta linha se quiser versionar skills customizadas próprias
+
+.agent/skills/
+
+# Cursor — versionar .cursor/rules/ se o time usar Cursor
+.cursor/
+!.cursor/rules/
+
+# Windsurf
+.windsurf/
+
+# Codex / OpenAI
+.codex/
+
+# Outros agentes — histórico e memória gerados automaticamente
+.aider*
+.continue/
+
+# ======================
+# Python / Backend
+# ======================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtualenv
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Pytest
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Ruff
+.ruff_cache/
+
+# Alembic
+# (manter alembic/versions no git — não ignorar)
+
+# Secrets
+*.pem
+*.key
+secrets.json
+
+# ======================
+# Node / Frontend
+# ======================
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+
+# Vite
+.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+# ======================
+# Variáveis de ambiente
+# ======================
+.env
+.env.*
+!.env.example
+
+# ======================
+# IDEs e editores
+# ======================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/mcp.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ======================
+# Vercel
+# ======================
+.vercel
+
+# ======================
+# Logs
+# ======================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ======================
+# Docker
+# ======================
+.dockerignore
+
+# ======================
+# Misc
+# ======================
+*.bak
+*.tmp
+.cache/
