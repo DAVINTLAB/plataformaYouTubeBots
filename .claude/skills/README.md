@@ -13,6 +13,8 @@ componentes React sugeridos, casos de erro e dependências com outras USs.
 | [us-05-review.md](us-05-review.md)         | US-05 | Desempate de conflitos e revisão de bots (admin)|
 | [us-06-dashboard.md](us-06-dashboard.md)   | US-06 | Dashboard global e individual com Plotly        |
 
+| [readme-gen.md](readme-gen.md) | —     | Geração consistente de READMEs (raiz, backend, frontend) |
+
 ## Fluxo entre USs
 
 ```

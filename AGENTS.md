@@ -64,6 +64,50 @@ Nunca sugira ou gere código que ignore esses checks (`--no-verify`, `// eslint-
 - Não adicione docstrings, comentários ou type annotations em código que não foi alterado
 - Três linhas similares são melhores que uma abstração prematura
 
+## Convenção de branches (Gitflow)
+
+```
+main         produção — código estável, releases marcadas com tag
+dev          integração — alvo de todo PR de feature concluída
+feature/*    desenvolvimento de uma US ou tarefa específica
+hotfix/*     correção urgente direto de main
+release/*    preparação de release (bump de versão, changelog)
+```
+
+### Regras
+
+- **Nunca commitar direto em `main` ou `dev`** — todo código entra via PR
+- Branch de feature criada a partir de `dev`: `git checkout -b feature/us-02-collect dev`
+- PR de feature sempre aponta para `dev` — nunca para `main`
+- Após conclusão e revisão da feature, merge em `dev` com **merge commit** (não squash) para preservar histórico
+- Quando `dev` estiver estável para release: PR de `dev` → `main` + tag `vX.Y.Z`
+- Hotfix: branch a partir de `main`, PR para `main` **e** cherry-pick ou PR para `dev`
+
+### Nomenclatura de branches
+
+| Tipo      | Padrão                        | Exemplos                          |
+|-----------|-------------------------------|-----------------------------------|
+| Feature   | `feature/us-NN-descricao`     | `feature/us-02-collect`           |
+| Fix       | `fix/descricao-curta`         | `fix/api-key-leak-log`            |
+| Hotfix    | `hotfix/descricao-curta`      | `hotfix/jwt-expiry-crash`         |
+| Release   | `release/vX.Y.Z`              | `release/v1.0.0`                  |
+| Infra/CI  | `chore/descricao-curta`       | `chore/ci-coverage-threshold`     |
+
+### Para agentes de IA
+
+Ao iniciar uma tarefa, verifique em qual branch está antes de criar arquivos ou commitar:
+
+```bash
+git branch --show-current   # deve ser uma branch feature/* ou fix/*
+git log --oneline -5        # confirmar ponto de partida
+```
+
+Nunca crie commits diretamente em `main` ou `dev`.
+Se a branch atual for `main` ou `dev`, crie uma nova branch antes de qualquer alteração:
+```bash
+git checkout -b feature/us-XX-descricao dev
+```
+
 ## Fluxo de User Stories (US)
 
 ```
