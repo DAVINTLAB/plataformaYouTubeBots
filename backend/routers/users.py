@@ -5,9 +5,14 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.user import User
-from schemas.user import ChangePasswordRequest, ResetPasswordRequest, UserCreate, UserOut
-from services.auth import get_current_user, require_admin
+from schemas.user import (
+    ChangePasswordRequest,
+    ResetPasswordRequest,
+    UserCreate,
+    UserOut,
+)
 from services import user as user_service
+from services.auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -53,7 +58,9 @@ def change_own_password(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_service.change_own_password(db, current_user, body.current_password, body.new_password)
+    user_service.change_own_password(
+        db, current_user, body.current_password, body.new_password
+    )
 
 
 @router.patch("/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)

@@ -43,7 +43,7 @@ export function useUsers() {
       await usersApi.create(data, token);
       await fetchUsers();
     },
-    [token, fetchUsers],
+    [token, fetchUsers]
   );
 
   const deactivateUser = useCallback(
@@ -52,7 +52,7 @@ export function useUsers() {
       await usersApi.delete(userId, token);
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: false } : u)));
     },
-    [token],
+    [token]
   );
 
   const reactivateUser = useCallback(
@@ -61,7 +61,7 @@ export function useUsers() {
       const updated = await usersApi.reactivate(userId, token);
       setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
     },
-    [token],
+    [token]
   );
 
   return { users, loading, error, createUser, deactivateUser, reactivateUser, refetch: fetchUsers };

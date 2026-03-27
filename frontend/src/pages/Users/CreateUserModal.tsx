@@ -36,9 +36,7 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-5">
-          <h2 className="text-[17px] font-bold text-gray-800 tracking-tight">
-            Criar Anotador
-          </h2>
+          <h2 className="text-[17px] font-bold text-gray-800 tracking-tight">Criar Anotador</h2>
           <button
             className="bg-transparent border-0 cursor-pointer text-gray-500 text-base px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
             onClick={onClose}

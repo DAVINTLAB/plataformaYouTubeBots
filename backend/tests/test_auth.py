@@ -53,9 +53,7 @@ def test_expired_token_returns_401(client, mocker):
 
     mocker.patch("services.auth.jwt.decode", side_effect=ExpiredSignatureError)
 
-    response = client.get(
-        "/users/", headers={"Authorization": "Bearer expired_token"}
-    )
+    response = client.get("/users/", headers={"Authorization": "Bearer expired_token"})
     assert response.status_code == 401
 
 

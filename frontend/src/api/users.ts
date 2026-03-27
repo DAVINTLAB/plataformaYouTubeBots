@@ -29,5 +29,9 @@ export const usersApi = {
     request<void>("/users/me/password", { method: "PATCH", body: JSON.stringify(data) }, token),
 
   resetPassword: (userId: string, data: { new_password: string }, token: string) =>
-    request<void>(`/users/${userId}/password`, { method: "PATCH", body: JSON.stringify(data) }, token),
+    request<void>(
+      `/users/${userId}/password`,
+      { method: "PATCH", body: JSON.stringify(data) },
+      token
+    ),
 };

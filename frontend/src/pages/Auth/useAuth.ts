@@ -13,7 +13,7 @@ export function useAuth() {
       setLogin(access_token);
       navigate("/");
     },
-    [setLogin, navigate],
+    [setLogin, navigate]
   );
 
   const logout = useCallback(async () => {

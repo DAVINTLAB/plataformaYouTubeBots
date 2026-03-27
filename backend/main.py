@@ -8,7 +8,9 @@ from routers import auth, users
 # Em produção, definir CORS_ORIGINS no Vercel Dashboard:
 #   CORS_ORIGINS=https://seu-frontend.vercel.app
 # Em desenvolvimento, o padrão é localhost:3000
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")]
+CORS_ORIGINS = [
+    o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+]
 
 app = FastAPI(title="Plataforma YouTube Bots API", version="0.1.0")
 

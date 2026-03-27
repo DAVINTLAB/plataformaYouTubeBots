@@ -4,7 +4,7 @@ export const API_URL =
 export class ApiError extends Error {
   constructor(
     message: string,
-    public status: number,
+    public status: number
   ) {
     super(message);
   }
@@ -13,7 +13,7 @@ export class ApiError extends Error {
 export async function request<T>(
   path: string,
   options: RequestInit = {},
-  token?: string | null,
+  token?: string | null
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

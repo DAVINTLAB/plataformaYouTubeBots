@@ -125,7 +125,9 @@ def test_reactivate_user_sets_is_active_true(client, db, admin_user, regular_use
     assert regular_user.is_active is True
 
 
-def test_reactivate_already_active_user_returns_409(client, db, admin_user, regular_user):
+def test_reactivate_already_active_user_returns_409(
+    client, db, admin_user, regular_user
+):
     """Fake: reativar usuário já ativo retorna 409."""
     app.dependency_overrides[get_current_user] = lambda: admin_user
 
@@ -170,6 +172,7 @@ def test_user_can_change_own_password(client, db, regular_user):
 
     db.refresh(regular_user)
     from services.auth import verify_password
+
     assert verify_password("newsecure99", regular_user.hashed_password)
 
 
@@ -207,6 +210,7 @@ def test_admin_can_reset_any_password(client, db, admin_user, regular_user):
 
     db.refresh(regular_user)
     from services.auth import verify_password
+
     assert verify_password("resetado99", regular_user.hashed_password)
 
 

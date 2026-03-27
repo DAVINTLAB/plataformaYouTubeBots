@@ -228,9 +228,7 @@ function Card({ stage, onClick }: CardProps) {
         <span
           className={[
             "inline-flex p-2 rounded-lg",
-            stage.available
-              ? "bg-davint-400/10 text-davint-400"
-              : "bg-gray-100 text-gray-400",
+            stage.available ? "bg-davint-400/10 text-davint-400" : "bg-gray-100 text-gray-400",
           ].join(" ")}
         >
           {stage.icon}
@@ -238,9 +236,7 @@ function Card({ stage, onClick }: CardProps) {
         <span
           className={[
             "text-[11px] font-semibold px-2.5 py-0.5 rounded-full",
-            stage.available
-              ? "bg-green-50 text-green-600"
-              : "bg-gray-100 text-gray-400",
+            stage.available ? "bg-green-50 text-green-600" : "bg-gray-100 text-gray-400",
           ].join(" ")}
         >
           {stage.available ? "Disponível" : "Em breve"}
@@ -331,11 +327,7 @@ export function HomePage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {pipelineStages.map((stage) => (
-              <Card
-                key={stage.us}
-                stage={stage}
-                onClick={() => navigate(stage.route)}
-              />
+              <Card key={stage.us} stage={stage} onClick={() => navigate(stage.route)} />
             ))}
           </div>
         </section>
@@ -348,11 +340,7 @@ export function HomePage() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {ADMIN_CARDS.map((stage) => (
-                <Card
-                  key={stage.us}
-                  stage={stage}
-                  onClick={() => navigate(stage.route)}
-                />
+                <Card key={stage.us} stage={stage} onClick={() => navigate(stage.route)} />
               ))}
             </div>
           </section>
@@ -363,7 +351,10 @@ export function HomePage() {
         <ChangePasswordModal
           onClose={() => setShowChangePassword(false)}
           onSubmit={(currentPassword, newPassword) =>
-            usersApi.changePassword({ current_password: currentPassword, new_password: newPassword }, token!)
+            usersApi.changePassword(
+              { current_password: currentPassword, new_password: newPassword },
+              token!
+            )
           }
         />
       )}
