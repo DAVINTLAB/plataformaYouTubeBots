@@ -16,32 +16,83 @@ Sistema de detecção de bots em comentários do YouTube para pesquisa científi
   - Backend: projeto Vercel separado com `@vercel/python`, domínio próprio, timeout 10s no free tier
   - Frontend consome backend via variável de ambiente `VITE_API_URL`
 
-## Estrutura
+## Arquitetura
+
+Arquitetura em Camadas com princípios de Clean Architecture aplicados onde agrega valor. As camadas só se comunicam na direção: `routers → services → repositories → models`.
 
 ```
-botwatch/
+/
 ├── backend/
 │   ├── main.py               # entrypoint Vercel (@vercel/python)
-│   ├── vercel.json           # configuração do runtime Python no Vercel
+│   ├── vercel.json
 │   ├── requirements.txt
-│   ├── routers/              # endpoints por domínio
-│   │   ├── auth.py           # US-01 — login, logout, gestão de usuários
-│   │   ├── collect.py        # US-02 — coleta de comentários YouTube
-│   │   ├── clean.py          # US-03 — limpeza e seleção de dataset
-│   │   ├── annotate.py       # US-04 — anotação de comentários
-│   │   ├── review.py         # US-05 — desempate pelo admin
-│   │   └── dashboard.py      # US-06 — dashboard Plotly
-│   ├── services/             # lógica de negócio
-│   ├── models/               # modelos SQLAlchemy (tabelas)
-│   ├── schemas/              # modelos Pydantic (validação)
-│   └── tests/                # testes Pytest
+│   ├── routers/              # Camada de apresentação — HTTP, validação entrada/saída
+│   │   ├── auth.py           # US-01
+│   │   ├── collect.py        # US-02
+│   │   ├── clean.py          # US-03
+│   │   ├── annotate.py       # US-04
+│   │   ├── review.py         # US-05
+│   │   └── dashboard.py      # US-06
+│   ├── services/             # Camada de aplicação — regras de negócio, orquestração
+│   │   ├── auth.py
+│   │   ├── collect.py
+│   │   ├── clean/            # algoritmos de seleção (OCP — cada critério é uma classe)
+│   │   │   ├── base.py       # SelectorBase (ABC)
+│   │   │   ├── percentile.py
+│   │   │   ├── mean.py
+│   │   │   ├── median.py
+│   │   │   ├── mode.py
+│   │   │   ├── short_comments.py
+│   │   │   ├── time_interval.py
+│   │   │   ├── identical.py
+│   │   │   └── profile.py
+│   │   ├── annotate.py
+│   │   ├── review.py
+│   │   └── dashboard.py
+│   ├── repositories/         # Camada de acesso a dados — isola o banco dos serviços
+│   │   ├── base.py           # RepositoryBase (ABC)
+│   │   ├── user.py
+│   │   ├── comment.py
+│   │   ├── dataset.py
+│   │   ├── annotation.py
+│   │   └── resolution.py
+│   ├── models/               # Entidades SQLAlchemy
+│   ├── schemas/              # DTOs Pydantic — entrada e saída de cada endpoint
+│   ├── core/                 # Configurações, segurança, dependências compartilhadas
+│   │   ├── config.py         # variáveis de ambiente via pydantic-settings
+│   │   ├── security.py       # JWT, bcrypt
+│   │   └── dependencies.py   # get_db, get_current_user, require_admin, require_master
+│   └── tests/
 └── frontend/
-    ├── src/
-    │   ├── pages/            # telas por US
-    │   ├── components/       # componentes reutilizáveis
-    │   └── api/              # chamadas ao backend (fetch/axios)
-    └── vite.config.ts
+    └── src/
+        ├── pages/            # telas por US
+        ├── components/       # componentes reutilizáveis (SRP — uma responsabilidade visual)
+        ├── hooks/            # lógica isolada em hooks (useAnnotation, useClean, etc.)
+        └── api/              # chamadas ao backend — componentes nunca fazem fetch diretamente (DIP)
 ```
+
+## Princípios SOLID
+
+Aplicados em backend e frontend.
+
+**SRP — Single Responsibility**
+- Backend: `routers/` só lida com HTTP, `services/` só orquestra lógica, `repositories/` só acessa o banco
+- Frontend: componentes têm responsabilidade visual; lógica de negócio fica em hooks customizados
+
+**OCP — Open/Closed**
+- Algoritmos de limpeza da US-03 implementam `SelectorBase` — adicionar novo critério = nova classe, sem modificar as existentes
+- Componentes de gráfico Plotly recebem `data` e `layout` como props — extensíveis sem modificação
+
+**LSP — Liskov Substitution**
+- Qualquer implementação de `SelectorBase` ou `RepositoryBase` pode ser substituída sem quebrar o sistema
+- Repositórios reais substituídos por mocks nos testes implementando a mesma interface
+
+**ISP — Interface Segregation**
+- Repositórios com interfaces específicas por domínio (`CommentRepository`, `UserRepository`, `DatasetRepository`) — sem interface genérica com métodos desnecessários
+
+**DIP — Dependency Inversion**
+- Backend: serviços recebem repositórios injetados via construtor — nunca os instanciam; FastAPI injeta via `Depends()`
+- Frontend: componentes consomem dados via hooks e `api/` — nunca fazem `fetch` diretamente
 
 ## Comandos
 
