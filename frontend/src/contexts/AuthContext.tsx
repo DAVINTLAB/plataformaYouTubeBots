@@ -6,6 +6,8 @@ import {
   useState,
 } from "react";
 
+const TOKEN_KEY = "access_token";
+
 interface JWTPayload {
   sub: string;
   role: string;
@@ -35,34 +37,33 @@ function decodeJWT(token: string): JWTPayload | null {
   }
 }
 
-function readStoredUser(): AuthUser | null {
-  const token = localStorage.getItem("access_token");
+function readStoredSession(): { token: string; user: AuthUser } | null {
+  const token = sessionStorage.getItem(TOKEN_KEY);
   if (!token) return null;
   const payload = decodeJWT(token);
   if (!payload || payload.exp * 1000 < Date.now()) {
-    localStorage.removeItem("access_token");
+    sessionStorage.removeItem(TOKEN_KEY);
     return null;
   }
-  return { username: payload.sub, role: payload.role };
+  return { token, user: { username: payload.sub, role: payload.role } };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem("access_token"),
-  );
-  const [user, setUser] = useState<AuthUser | null>(readStoredUser);
+  const stored = readStoredSession();
+  const [token, setToken] = useState<string | null>(stored?.token ?? null);
+  const [user, setUser] = useState<AuthUser | null>(stored?.user ?? null);
 
   const login = useCallback((newToken: string) => {
-    localStorage.setItem("access_token", newToken);
-    setToken(newToken);
     const payload = decodeJWT(newToken);
     if (payload) {
+      sessionStorage.setItem(TOKEN_KEY, newToken);
+      setToken(newToken);
       setUser({ username: payload.sub, role: payload.role });
     }
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("access_token");
+    sessionStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
   }, []);
