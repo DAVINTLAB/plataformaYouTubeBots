@@ -151,3 +151,71 @@ def test_deactivate_then_reactivate_full_cycle(client, db, admin_user, regular_u
     assert r.json()["is_active"] is True
     db.refresh(regular_user)
     assert regular_user.is_active is True
+
+
+# ---------------------------------------------------------------------------
+# Troca e reset de senha
+# ---------------------------------------------------------------------------
+
+
+def test_user_can_change_own_password(client, db, regular_user):
+    """Fake: usuário autenticado troca a própria senha com a senha atual correta."""
+    app.dependency_overrides[get_current_user] = lambda: regular_user
+
+    response = client.patch(
+        "/users/me/password",
+        json={"current_password": "userpass1!", "new_password": "newsecure99"},
+    )
+    assert response.status_code == 204
+
+    db.refresh(regular_user)
+    from services.auth import verify_password
+    assert verify_password("newsecure99", regular_user.hashed_password)
+
+
+def test_change_password_wrong_current_returns_400(client, regular_user):
+    """Fake: senha atual incorreta retorna 400."""
+    app.dependency_overrides[get_current_user] = lambda: regular_user
+
+    response = client.patch(
+        "/users/me/password",
+        json={"current_password": "errada123", "new_password": "newsecure99"},
+    )
+    assert response.status_code == 400
+
+
+def test_change_password_short_new_returns_422(client, regular_user):
+    """Fake: nova senha < 8 caracteres retorna 422 (validação Pydantic)."""
+    app.dependency_overrides[get_current_user] = lambda: regular_user
+
+    response = client.patch(
+        "/users/me/password",
+        json={"current_password": "userpass1!", "new_password": "curta"},
+    )
+    assert response.status_code == 422
+
+
+def test_admin_can_reset_any_password(client, db, admin_user, regular_user):
+    """Fake: admin redefine senha de outro usuário sem precisar da senha atual."""
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    response = client.patch(
+        f"/users/{regular_user.id}/password",
+        json={"new_password": "resetado99"},
+    )
+    assert response.status_code == 204
+
+    db.refresh(regular_user)
+    from services.auth import verify_password
+    assert verify_password("resetado99", regular_user.hashed_password)
+
+
+def test_reset_nonexistent_user_returns_404(client, fake_admin):
+    """Fake: reset de usuário inexistente retorna 404."""
+    app.dependency_overrides[get_current_user] = lambda: fake_admin
+
+    response = client.patch(
+        f"/users/{uuid.uuid4()}/password",
+        json={"new_password": "qualquer99"},
+    )
+    assert response.status_code == 404

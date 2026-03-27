@@ -24,4 +24,10 @@ export const usersApi = {
 
   reactivate: (userId: string, token: string) =>
     request<UserOut>(`/users/${userId}/reactivate`, { method: "POST" }, token),
+
+  changePassword: (data: { current_password: string; new_password: string }, token: string) =>
+    request<void>("/users/me/password", { method: "PATCH", body: JSON.stringify(data) }, token),
+
+  resetPassword: (userId: string, data: { new_password: string }, token: string) =>
+    request<void>(`/users/${userId}/password`, { method: "PATCH", body: JSON.stringify(data) }, token),
 };

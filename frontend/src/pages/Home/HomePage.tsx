@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { usersApi } from "../../api/users";
 import { useAuthContext } from "../../contexts/AuthContext";
 import { useAuth } from "../Auth/useAuth";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Admin",
@@ -277,9 +280,10 @@ function Card({ stage, onClick }: CardProps) {
 }
 
 export function HomePage() {
-  const { user, isAdmin } = useAuthContext();
+  const { user, isAdmin, token } = useAuthContext();
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const pipelineStages = PIPELINE_STAGES.filter((s) => !s.adminOnly || isAdmin);
 
@@ -299,6 +303,9 @@ export function HomePage() {
             </span>
             {user?.username}
           </span>
+          <button className="btn btn-ghost" onClick={() => setShowChangePassword(true)}>
+            Alterar senha
+          </button>
           <button className="btn btn-ghost" onClick={() => void logout()}>
             Sair
           </button>
@@ -351,6 +358,15 @@ export function HomePage() {
           </section>
         )}
       </main>
+
+      {showChangePassword && (
+        <ChangePasswordModal
+          onClose={() => setShowChangePassword(false)}
+          onSubmit={(currentPassword, newPassword) =>
+            usersApi.changePassword({ current_password: currentPassword, new_password: newPassword }, token!)
+          }
+        />
+      )}
     </div>
   );
 }

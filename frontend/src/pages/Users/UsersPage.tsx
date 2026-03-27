@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { usersApi } from "../../api/users";
 import { useAuthContext } from "../../contexts/AuthContext";
 import { useAuth } from "../Auth/useAuth";
+import { ChangePasswordModal } from "../Home/ChangePasswordModal";
 import { CreateUserModal } from "./CreateUserModal";
+import { ResetPasswordModal } from "./ResetPasswordModal";
 import { useUsers } from "./useUsers";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -11,13 +14,15 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export function UsersPage() {
-  const { user } = useAuthContext();
+  const { user, token } = useAuthContext();
   const { logout } = useAuth();
   const navigate = useNavigate();
   const { users, loading, error, createUser, deactivateUser, reactivateUser } = useUsers();
   const [showModal, setShowModal] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<{ id: string; username: string } | null>(null);
 
   async function handleDeactivate(id: string) {
     setDeactivatingId(id);
@@ -70,6 +75,9 @@ export function UsersPage() {
             <span className="badge badge-admin">{user ? (ROLE_LABEL[user.role] ?? user.role) : ""}</span>
             {user?.username}
           </span>
+          <button className="btn btn-ghost" onClick={() => setShowChangePassword(true)}>
+            Alterar senha
+          </button>
           <button className="btn btn-ghost" onClick={() => void logout()}>
             Sair
           </button>
@@ -151,23 +159,31 @@ export function UsersPage() {
                       </td>
                       <td className="px-5 py-3.5 text-right align-middle">
                         {u.username !== user?.username && (
-                          u.is_active ? (
+                          <div className="flex items-center justify-end gap-2">
                             <button
-                              className="btn btn-danger"
-                              disabled={deactivatingId === u.id}
-                              onClick={() => void handleDeactivate(u.id)}
+                              className="btn btn-ghost"
+                              onClick={() => setResetTarget({ id: u.id, username: u.username })}
                             >
-                              {deactivatingId === u.id ? "Desativando…" : "Desativar"}
+                              Redefinir senha
                             </button>
-                          ) : (
-                            <button
-                              className="btn btn-primary"
-                              disabled={reactivatingId === u.id}
-                              onClick={() => void handleReactivate(u.id)}
-                            >
-                              {reactivatingId === u.id ? "Reativando…" : "Reativar"}
-                            </button>
-                          )
+                            {u.is_active ? (
+                              <button
+                                className="btn btn-danger"
+                                disabled={deactivatingId === u.id}
+                                onClick={() => void handleDeactivate(u.id)}
+                              >
+                                {deactivatingId === u.id ? "Desativando…" : "Desativar"}
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-primary"
+                                disabled={reactivatingId === u.id}
+                                onClick={() => void handleReactivate(u.id)}
+                              >
+                                {reactivatingId === u.id ? "Reativando…" : "Reativar"}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -181,6 +197,25 @@ export function UsersPage() {
 
       {showModal && (
         <CreateUserModal onClose={() => setShowModal(false)} onCreate={createUser} />
+      )}
+
+      {showChangePassword && (
+        <ChangePasswordModal
+          onClose={() => setShowChangePassword(false)}
+          onSubmit={(currentPassword, newPassword) =>
+            usersApi.changePassword({ current_password: currentPassword, new_password: newPassword }, token!)
+          }
+        />
+      )}
+
+      {resetTarget && (
+        <ResetPasswordModal
+          username={resetTarget.username}
+          onClose={() => setResetTarget(null)}
+          onSubmit={(newPassword) =>
+            usersApi.resetPassword(resetTarget.id, { new_password: newPassword }, token!)
+          }
+        />
       )}
     </div>
   );

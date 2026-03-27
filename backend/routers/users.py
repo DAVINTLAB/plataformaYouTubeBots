@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.user import User
-from schemas.user import UserCreate, UserOut
-from services.auth import require_admin
+from schemas.user import ChangePasswordRequest, ResetPasswordRequest, UserCreate, UserOut
+from services.auth import get_current_user, require_admin
 from services import user as user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -45,3 +45,22 @@ def reactivate_user(
     db: Session = Depends(get_db),
 ):
     return user_service.reactivate_user(db, user_id)
+
+
+@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_own_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_service.change_own_password(db, current_user, body.current_password, body.new_password)
+
+
+@router.patch("/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+def reset_user_password(
+    user_id: uuid.UUID,
+    body: ResetPasswordRequest,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user_service.reset_user_password(db, user_id, body.new_password)
