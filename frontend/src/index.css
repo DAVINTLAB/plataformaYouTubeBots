@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-size: 15px;
+  }
+}
+
+@layer components {
+  /* ─── Botões ─────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center gap-1.5 px-[18px] py-2 rounded-md text-sm font-medium
+           cursor-pointer border-0 transition-colors duration-150 whitespace-nowrap no-underline;
+  }
+  .btn:disabled {
+    @apply opacity-60 cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply bg-davint-400 text-white hover:bg-davint-500;
+  }
+  .btn-danger {
+    @apply bg-transparent text-red-500 border border-red-500 hover:bg-red-50;
+  }
+  .btn-ghost {
+    @apply bg-transparent text-gray-500 border border-gray-200 hover:bg-gray-100;
+  }
+  .btn-full {
+    @apply w-full justify-center py-[11px] text-[15px];
+  }
+
+  /* ─── Formulário ─────────────────────────── */
+  .form-group {
+    @apply flex flex-col gap-1.5 mb-5;
+  }
+  .form-label {
+    @apply text-[13px] font-semibold text-gray-700 tracking-wide;
+  }
+  .form-input,
+  .form-select {
+    @apply px-3.5 py-2.5 border border-gray-200 rounded-md text-sm text-gray-700 bg-white
+           outline-none transition-colors duration-150
+           focus:border-davint-400 focus:ring-2 focus:ring-davint-400/20;
+  }
+
+  /* ─── Badges ─────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide;
+  }
+  .badge-admin {
+    @apply bg-davint-400/10 text-davint-500;
+  }
+  .badge-user {
+    @apply bg-green-500/10 text-green-600;
+  }
+
+  /* ─── Alertas ────────────────────────────── */
+  .alert {
+    @apply px-3.5 py-2.5 rounded-md text-[13px] mb-4;
+  }
+  .alert-error {
+    @apply bg-red-50 text-red-500 border border-red-200;
+  }
+}

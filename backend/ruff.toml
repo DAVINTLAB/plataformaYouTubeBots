@@ -13,10 +13,11 @@ select = [
 ]
 ignore = [
     "S101", # assert em testes é ok
+    "B008", # Depends() em defaults é padrão idiomático do FastAPI
 ]
 
 [lint.per-file-ignores]
-"tests/**" = ["S", "B"]
+"tests/**" = ["S", "B", "E501"]
 
 [format]
 quote-style = "double"

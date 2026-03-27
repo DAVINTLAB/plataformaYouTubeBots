@@ -31,10 +31,13 @@ jobs:
         run: ruff format --check .
 
       - name: Security analysis (bandit)
-        run: bandit -r . -x tests/
+        run: bandit -r . --exclude ./tests --skip B101
 
       - name: Dependency audit (pip-audit)
-        run: pip-audit
+        # CVE-2026-4539: ReDoS no AdlLexer do pygments (acesso local apenas,
+        # sem fix disponível na versão mais recente). É dep transitiva de
+        # pip-audit → rich → pygments, sem impacto para a API web.
+        run: pip-audit -r requirements.txt --ignore-vuln CVE-2026-4539
 
       - name: Tests with coverage
         run: pytest --cov=. --cov-fail-under=80
