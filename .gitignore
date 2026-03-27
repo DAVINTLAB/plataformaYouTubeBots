@@ -130,6 +130,11 @@ pnpm-debug.log*
 .dockerignore
 
 # ======================
+# Handoff de sessão (contém credenciais locais — nunca versionar)
+# ======================
+SESSION_HANDOFF.md
+
+# ======================
 # Misc
 # ======================
 *.bak
