@@ -6,7 +6,7 @@ Sistema de detecção de bots em comentários do YouTube para pesquisa científi
 
 - **Backend:** Python 3.11+ · FastAPI · SQLAlchemy · Alembic · Pytest
 - **Backend — qualidade e segurança:** Ruff (linter + formatter) · Bandit (análise estática) · pip-audit (auditoria de dependências)
-- **Frontend:** React 18 · TypeScript · Vite · Plotly.js
+- **Frontend:** React 18 · TypeScript · Vite · Plotly.js · Tailwind CSS v3
 - **Frontend — qualidade e segurança:** ESLint · Prettier · npm audit (auditoria de dependências)
 - **Dependências (ambos):** Dependabot ativo no GitHub — PRs automáticos para atualizações de segurança
 - **Auth:** JWT + bcrypt (python-jose + passlib)

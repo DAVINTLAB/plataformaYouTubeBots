@@ -78,6 +78,46 @@ export async function saveAnnotation(payload: AnnotationPayload): Promise<Annota
 import { saveAnnotation } from '@/api/annotate'
 ```
 
+## CSS (Tailwind CSS v3)
+
+O projeto usa **Tailwind CSS v3** com PostCSS. Não há CSS Modules nem outros frameworks CSS.
+
+```
+src/index.css           → @tailwind directives + @layer components (classes reutilizáveis)
+tailwind.config.js      → content paths, cores DaVint, animações customizadas
+```
+
+### Cores do tema (tailwind.config.js)
+
+```js
+colors: {
+  davint: {
+    50:  '#edf7fa',
+    400: '#38b5c9',  // primária — botões, foco, badges
+    500: '#2ea0b1',  // hover
+  }
+}
+```
+
+### Classes utilitárias globais (@layer components em index.css)
+
+Usadas diretamente no JSX (sem import):
+
+| Classe | Uso |
+|--------|-----|
+| `.btn .btn-primary` | botão primário (teal DaVint) |
+| `.btn .btn-danger` | botão destrutivo (vermelho, outline) |
+| `.btn .btn-ghost` | botão secundário (outline cinza) |
+| `.btn .btn-full` | botão largura total |
+| `.form-group / .form-label / .form-input` | campos de formulário |
+| `.badge .badge-admin` | badge papel admin (teal) |
+| `.badge .badge-user` | badge papel pesquisador (verde) |
+| `.alert .alert-error` | mensagem de erro inline |
+
+### Regra
+
+Layout e estilos de página ficam como classes Tailwind inline no JSX. Classes que aparecem em 3 ou mais componentes distintos sobem para `@layer components` em `index.css`.
+
 ## Regras de segurança
 
 - Token JWT em `sessionStorage` (persiste o refresh, some ao fechar a aba) — nunca em `localStorage`

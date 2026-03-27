@@ -1,6 +1,5 @@
 import { FormEvent, useState } from "react";
 import { UserCreate } from "../../api/users";
-import styles from "./CreateUserModal.module.css";
 
 interface Props {
   onClose: () => void;
@@ -28,17 +27,29 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
   }
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHeader}>
-          <h2 className={styles.modalTitle}>Criar Pesquisador</h2>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Fechar">
+    <div
+      className="fixed inset-0 bg-[rgba(15,12,40,0.45)] backdrop-blur-sm flex items-center justify-center p-6 z-[100] animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-[440px] animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 pt-5">
+          <h2 className="text-[17px] font-bold text-gray-800 tracking-tight">
+            Criar Anotador
+          </h2>
+          <button
+            className="bg-transparent border-0 cursor-pointer text-gray-500 text-base px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
+            onClick={onClose}
+            aria-label="Fechar"
+          >
             ✕
           </button>
         </div>
 
         <form onSubmit={handleSubmit} noValidate>
-          <div className={styles.body}>
+          <div className="px-6 pt-6">
             <div className="form-group">
               <label className="form-label" htmlFor="new-username">
                 Usuário
@@ -57,7 +68,7 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
               />
             </div>
 
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group mb-0">
               <label className="form-label" htmlFor="new-password">
                 Senha
               </label>
@@ -73,15 +84,15 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
               />
             </div>
 
-            {error && <div className="alert alert-error" style={{ marginTop: 16 }}>{error}</div>}
+            {error && <div className="alert alert-error mt-4">{error}</div>}
           </div>
 
-          <div className={styles.footer}>
+          <div className="flex justify-end gap-2.5 px-6 py-5 border-t border-gray-200 mt-6">
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Cancelar
             </button>
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? "Criando…" : "Criar Pesquisador"}
+              {loading ? "Criando…" : "Criar Anotador"}
             </button>
           </div>
         </form>

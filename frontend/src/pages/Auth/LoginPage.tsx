@@ -1,6 +1,5 @@
 import { FormEvent, useState } from "react";
 import { useAuth } from "./useAuth";
-import styles from "./LoginPage.module.css";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -23,18 +22,14 @@ export function LoginPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
-        <div className={styles.header}>
-          <div className={styles.logo}>
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
-              <rect width="40" height="40" rx="10" fill="#6c5fc7" />
-              <path d="M10 28L20 12L30 28" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M14 22H26" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-            </svg>
-          </div>
-          <h1 className={styles.title}>Plataforma YouTube Bots</h1>
-          <p className={styles.subtitle}>DaVint Lab · PUCRS</p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-davint-50 via-white to-davint-50 p-6">
+      <div className="bg-white rounded-xl shadow-xl px-9 py-10 w-full max-w-[420px]">
+        <div className="flex flex-col items-center text-center mb-8 gap-2.5">
+          <img src="/davint-logo.png" alt="DaVint Lab" className="h-12 w-auto mb-1" />
+          <h1 className="text-xl font-bold text-gray-800 tracking-tight">
+            Plataforma YouTube Bots
+          </h1>
+          <p className="text-sm text-gray-500">DaVint Lab · PUCRS</p>
         </div>
 
         <form onSubmit={handleSubmit} noValidate>
@@ -78,7 +73,7 @@ export function LoginPage() {
           </button>
         </form>
 
-        <p className={styles.note}>
+        <p className="mt-5 text-xs text-gray-500 text-center">
           Acesso restrito — conta criada pelo administrador.
         </p>
       </div>
