@@ -3,7 +3,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./dev.db")
+DATABASE_URL = os.getenv("DATABASE_URL") or "sqlite:///./dev.db"
 
 # Neon usa postgres:// mas SQLAlchemy requer postgresql://
 if DATABASE_URL.startswith("postgres://"):
