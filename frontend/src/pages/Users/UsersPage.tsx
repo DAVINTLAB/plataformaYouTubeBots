@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthContext } from "../../contexts/AuthContext";
 import { useAuth } from "../Auth/useAuth";
 import { CreateUserModal } from "./CreateUserModal";
@@ -12,27 +13,57 @@ const ROLE_LABEL: Record<string, string> = {
 export function UsersPage() {
   const { user } = useAuthContext();
   const { logout } = useAuth();
-  const { users, loading, error, createUser, deleteUser } = useUsers();
+  const navigate = useNavigate();
+  const { users, loading, error, createUser, deactivateUser, reactivateUser } = useUsers();
   const [showModal, setShowModal] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
-  async function handleDelete(id: string) {
-    setDeletingId(id);
+  async function handleDeactivate(id: string) {
+    setDeactivatingId(id);
     try {
-      await deleteUser(id);
+      await deactivateUser(id);
     } finally {
-      setDeletingId(null);
+      setDeactivatingId(null);
     }
   }
+
+  async function handleReactivate(id: string) {
+    setReactivatingId(id);
+    try {
+      await reactivateUser(id);
+    } finally {
+      setReactivatingId(null);
+    }
+  }
+
+  const sortedUsers = [...users].sort((a, b) => Number(b.is_active) - Number(a.is_active));
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <header className="flex items-center justify-between px-8 h-[60px] bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <img src="/davint-logo.png" alt="DaVint Lab" className="h-7 w-auto" />
+          <button
+            onClick={() => navigate("/")}
+            className="bg-transparent border-0 p-0 cursor-pointer flex-shrink-0"
+            aria-label="Voltar ao início"
+          >
+            <img src="/davint-logo.png" alt="DaVint Lab" className="h-7 w-auto" />
+          </button>
           <span className="inline-block w-px h-5 bg-gray-200" aria-hidden="true" />
-          <span className="text-sm font-semibold text-gray-500">Plataforma YouTube Bots</span>
+          <nav className="flex items-center gap-1.5 text-sm">
+            <button
+              onClick={() => navigate("/")}
+              className="font-semibold text-gray-500 hover:text-davint-400 transition-colors bg-transparent border-0 cursor-pointer p-0"
+            >
+              Início
+            </button>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3 text-gray-300 flex-shrink-0">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+            <span className="font-semibold text-gray-800">Usuários</span>
+          </nav>
         </div>
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-2 text-sm text-gray-500">
@@ -86,23 +117,30 @@ export function UsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {sortedUsers.map((u) => (
                     <tr
                       key={u.id}
-                      className="border-b border-gray-200 last:border-0 hover:bg-gray-50 transition-colors"
+                      className={[
+                        "border-b border-gray-200 last:border-0 transition-colors",
+                        u.is_active ? "hover:bg-gray-50" : "bg-gray-50/60",
+                      ].join(" ")}
                     >
-                      <td className="px-5 py-3.5 text-gray-800 align-middle">
-                        <div className="flex items-center gap-2.5 font-medium">
-                          <span className="w-[30px] h-[30px] rounded-full bg-davint-400 text-white text-[13px] font-bold inline-flex items-center justify-center flex-shrink-0">
+                      <td className="px-5 py-3.5 align-middle">
+                        <div className={`flex items-center gap-2.5 font-medium ${u.is_active ? "text-gray-800" : "text-gray-400"}`}>
+                          <span className={`w-[30px] h-[30px] rounded-full text-white text-[13px] font-bold inline-flex items-center justify-center flex-shrink-0 ${u.is_active ? "bg-davint-400" : "bg-gray-300"}`}>
                             {u.username[0].toUpperCase()}
                           </span>
                           {u.username}
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-gray-800 align-middle">
-                        <span className={`badge ${u.role === "admin" ? "badge-admin" : "badge-user"}`}>
-                          {ROLE_LABEL[u.role] ?? u.role}
-                        </span>
+                      <td className="px-5 py-3.5 align-middle">
+                        {u.is_active ? (
+                          <span className={`badge ${u.role === "admin" ? "badge-admin" : "badge-user"}`}>
+                            {ROLE_LABEL[u.role] ?? u.role}
+                          </span>
+                        ) : (
+                          <span className="badge bg-gray-100 text-gray-400">Inativo</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 text-gray-500 text-sm align-middle">
                         {new Date(u.created_at).toLocaleDateString("pt-BR", {
@@ -113,13 +151,23 @@ export function UsersPage() {
                       </td>
                       <td className="px-5 py-3.5 text-right align-middle">
                         {u.username !== user?.username && (
-                          <button
-                            className="btn btn-danger"
-                            disabled={deletingId === u.id}
-                            onClick={() => void handleDelete(u.id)}
-                          >
-                            {deletingId === u.id ? "Removendo…" : "Remover"}
-                          </button>
+                          u.is_active ? (
+                            <button
+                              className="btn btn-danger"
+                              disabled={deactivatingId === u.id}
+                              onClick={() => void handleDeactivate(u.id)}
+                            >
+                              {deactivatingId === u.id ? "Desativando…" : "Desativar"}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-primary"
+                              disabled={reactivatingId === u.id}
+                              onClick={() => void handleReactivate(u.id)}
+                            >
+                              {reactivatingId === u.id ? "Reativando…" : "Reativar"}
+                            </button>
+                          )
                         )}
                       </td>
                     </tr>

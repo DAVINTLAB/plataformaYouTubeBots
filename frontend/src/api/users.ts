@@ -5,6 +5,7 @@ export interface UserOut {
   username: string;
   role: string;
   created_at: string;
+  is_active: boolean;
 }
 
 export interface UserCreate {
@@ -20,4 +21,7 @@ export const usersApi = {
 
   delete: (userId: string, token: string) =>
     request<void>(`/users/${userId}`, { method: "DELETE" }, token),
+
+  reactivate: (userId: string, token: string) =>
+    request<UserOut>(`/users/${userId}/reactivate`, { method: "POST" }, token),
 };

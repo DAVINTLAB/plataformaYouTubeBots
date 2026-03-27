@@ -8,8 +8,8 @@ from schemas.user import UserCreate
 from services.auth import get_password_hash
 
 
-def list_active_users(db: Session) -> list[User]:
-    return db.query(User).filter(User.is_active == True).all()  # noqa: E712
+def list_all_users(db: Session) -> list[User]:
+    return db.query(User).all()
 
 
 def create_user(db: Session, data: UserCreate) -> User:
@@ -29,13 +29,13 @@ def create_user(db: Session, data: UserCreate) -> User:
     return user
 
 
-def delete_user(
+def deactivate_user(
     db: Session, user_id: uuid.UUID, requesting_user_id: uuid.UUID
 ) -> None:
     if requesting_user_id == user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Não é possível remover seu próprio usuário.",
+            detail="Não é possível desativar seu próprio usuário.",
         )
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -43,5 +43,23 @@ def delete_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuário não encontrado.",
         )
-    db.delete(user)
+    user.is_active = False
     db.commit()
+
+
+def reactivate_user(db: Session, user_id: uuid.UUID) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado.",
+        )
+    if user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Usuário já está ativo.",
+        )
+    user.is_active = True
+    db.commit()
+    db.refresh(user)
+    return user

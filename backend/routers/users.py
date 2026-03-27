@@ -17,7 +17,7 @@ def list_users(
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return user_service.list_active_users(db)
+    return user_service.list_all_users(db)
 
 
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -30,9 +30,18 @@ def create_user(
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(
+def deactivate_user(
     user_id: uuid.UUID,
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    user_service.delete_user(db, user_id, current_admin.id)
+    user_service.deactivate_user(db, user_id, current_admin.id)
+
+
+@router.post("/{user_id}/reactivate", response_model=UserOut)
+def reactivate_user(
+    user_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return user_service.reactivate_user(db, user_id)
