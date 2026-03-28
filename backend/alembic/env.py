@@ -8,6 +8,7 @@ from alembic import context
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import models.collection  # noqa: E402, F401 — registra modelo no Base.metadata
 import models.user  # noqa: E402, F401 — registra modelo no Base.metadata
 from database import DATABASE_URL, Base  # noqa: E402
 

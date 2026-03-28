@@ -2,17 +2,11 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usersApi } from "../../api/users";
+import { PageHeader } from "../../components/PageHeader";
 import { useAuthContext } from "../../contexts/AuthContext";
-import { useAuth } from "../Auth/useAuth";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 
-const ROLE_LABEL: Record<string, string> = {
-  admin: "Admin",
-  user: "Anotador",
-};
-
 interface StageCard {
-  us: string;
   step: number;
   title: string;
   description: string;
@@ -139,18 +133,16 @@ function IconUsers() {
 
 const PIPELINE_STAGES: StageCard[] = [
   {
-    us: "US-02",
     step: 1,
     title: "Coletar Comentários",
     description:
       "Informe o ID ou URL de um vídeo do YouTube para extrair todos os comentários via YouTube Data API.",
     route: "/collect",
     adminOnly: false,
-    available: false,
+    available: true,
     icon: <IconCloudArrowDown />,
   },
   {
-    us: "US-03",
     step: 2,
     title: "Limpar Dataset",
     description:
@@ -161,7 +153,6 @@ const PIPELINE_STAGES: StageCard[] = [
     icon: <IconFunnel />,
   },
   {
-    us: "US-04",
     step: 3,
     title: "Anotar Comentários",
     description:
@@ -172,7 +163,6 @@ const PIPELINE_STAGES: StageCard[] = [
     icon: <IconTag />,
   },
   {
-    us: "US-05",
     step: 4,
     title: "Revisar Conflitos",
     description:
@@ -183,7 +173,6 @@ const PIPELINE_STAGES: StageCard[] = [
     icon: <IconCheckCircle />,
   },
   {
-    us: "US-06",
     step: 5,
     title: "Dashboard",
     description:
@@ -197,7 +186,6 @@ const PIPELINE_STAGES: StageCard[] = [
 
 const ADMIN_CARDS: StageCard[] = [
   {
-    us: "US-01",
     step: 0,
     title: "Gerenciar Usuários",
     description: "Crie e remova contas de anotadores da plataforma.",
@@ -245,8 +233,7 @@ function Card({ stage, onClick }: CardProps) {
 
       <div className="flex-1">
         <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
-          {stage.us}
-          {stage.step > 0 && ` · Etapa ${stage.step}`}
+          {stage.step > 0 ? `Etapa ${stage.step}` : "Administração"}
         </p>
         <h3 className="text-[15px] font-bold text-gray-800 mb-1.5">{stage.title}</h3>
         <p className="text-sm text-gray-500 leading-relaxed">{stage.description}</p>
@@ -277,7 +264,6 @@ function Card({ stage, onClick }: CardProps) {
 
 export function HomePage() {
   const { user, isAdmin, token } = useAuthContext();
-  const { logout } = useAuth();
   const navigate = useNavigate();
   const [showChangePassword, setShowChangePassword] = useState(false);
 
@@ -285,28 +271,7 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <header className="flex items-center justify-between px-8 h-[60px] bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <img src="/davint-logo.png" alt="DaVint Lab" className="h-7 w-auto" />
-          <span className="inline-block w-px h-5 bg-gray-200" aria-hidden="true" />
-          <span className="text-sm font-semibold text-gray-500">Plataforma YouTube Bots</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-2 text-sm text-gray-500">
-            <span className={`badge ${isAdmin ? "badge-admin" : "badge-user"}`}>
-              {user ? (ROLE_LABEL[user.role] ?? user.role) : ""}
-            </span>
-            {user?.username}
-          </span>
-          <button className="btn btn-ghost" onClick={() => setShowChangePassword(true)}>
-            Alterar senha
-          </button>
-          <button className="btn btn-ghost" onClick={() => void logout()}>
-            Sair
-          </button>
-        </div>
-      </header>
+      <PageHeader onChangePassword={() => setShowChangePassword(true)} />
 
       {/* Main */}
       <main className="flex-1 px-8 py-9 max-w-5xl w-full mx-auto">
@@ -327,7 +292,7 @@ export function HomePage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {pipelineStages.map((stage) => (
-              <Card key={stage.us} stage={stage} onClick={() => navigate(stage.route)} />
+              <Card key={stage.route} stage={stage} onClick={() => navigate(stage.route)} />
             ))}
           </div>
         </section>
@@ -340,7 +305,7 @@ export function HomePage() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {ADMIN_CARDS.map((stage) => (
-                <Card key={stage.us} stage={stage} onClick={() => navigate(stage.route)} />
+                <Card key={stage.route} stage={stage} onClick={() => navigate(stage.route)} />
               ))}
             </div>
           </section>

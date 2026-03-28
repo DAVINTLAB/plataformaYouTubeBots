@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, users
+from routers import auth, collect, users
 
 # Em produção, definir CORS_ORIGINS no Vercel Dashboard:
 #   CORS_ORIGINS=https://seu-frontend.vercel.app
@@ -19,10 +19,12 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Length"],
 )
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(collect.router)
 
 
 @app.get("/health")

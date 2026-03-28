@@ -78,6 +78,115 @@ export async function saveAnnotation(payload: AnnotationPayload): Promise<Annota
 import { saveAnnotation } from '@/api/annotate'
 ```
 
+## Componentização
+
+### Regra de decisão
+
+| Situação | Onde colocar |
+|----------|-------------|
+| Elemento visual usado em **2+ páginas distintas** | `components/` |
+| Elemento visual exclusivo de uma página, mas com lógica própria | subcomponente em `pages/<US>/` |
+| Lógica de negócio reutilizável | `hooks/` |
+| Toda a lógica de uma página em um único componente gigante | **Proibido** — extrair subcomponentes |
+
+### Componentes globais existentes (`components/`)
+
+| Componente | Props principais | Uso |
+|------------|-----------------|-----|
+| `PageHeader` | `breadcrumbs?: BreadcrumbItem[]`, `onChangePassword?: () => void` | Todas as páginas autenticadas — **obrigatório** |
+| `StatusBadge` | `status: string`, `size?: "sm"\|"md"` | Badge colorido de status de coleta |
+| `ProgressBar` | `percent?: number`, `indeterminate?: boolean`, `label?: string`, `size?: "sm"\|"md"` | Barra de progresso determinada ou com pulso |
+| `StepsCard` | `title?: string`, `steps: { label: string; description?: string }[]` | Card de instruções passo a passo — **obrigatório em toda etapa inicial de US** |
+| `ProtectedRoute` | — | Rota que exige autenticação |
+
+### PageHeader — uso obrigatório em todas as páginas autenticadas
+
+```tsx
+// Página raiz (sem breadcrumb)
+<PageHeader onChangePassword={() => setShowChangePassword(true)} />
+
+// Página secundária (com breadcrumb)
+<PageHeader
+  breadcrumbs={[{ label: "Início", to: "/" }, { label: "Nome da Página" }]}
+  onChangePassword={() => setShowChangePassword(true)}   // omitir se não houver modal de senha
+/>
+```
+
+`PageHeader` gerencia internamente: logo DaVint, navegação, badge de papel, nome completo + username, botão "Sair". A página **não** deve re-implementar nenhum desses elementos.
+
+### StatusBadge
+
+```tsx
+// Tamanho padrão — painéis de detalhe
+<StatusBadge status={collection.status} />
+
+// Tamanho reduzido — linhas de tabela
+<StatusBadge status={col.status} size="sm" />
+```
+
+Reconhece os valores `pending`, `running`, `completed`, `failed`. Para outros valores exibe o texto literal com fundo cinza.
+
+### ProgressBar
+
+```tsx
+// Progresso determinado (ex: download com Content-Length)
+<ProgressBar percent={downloadPercent} label={`${downloadPercent}%`} size="sm" />
+
+// Progresso indeterminado (ex: coleta em andamento)
+<ProgressBar indeterminate label="Coletando comentários…" />
+```
+
+### Cards de instrução por etapa
+
+Toda página de US deve orientar o usuário em cada etapa do fluxo:
+
+| Etapa | Como instruir |
+|-------|--------------|
+| **Idle / formulário inicial** | `<StepsCard title="Passo a passo" steps={[...]} />` acima do formulário |
+| **Processamento ativo** | Notice inline (ex: `bg-davint-50`) com aviso de aguardar + o que acontece se sair |
+| **Estado interrompido / retomada** | Banner amarelo (`bg-yellow-50`) explicando o que ocorreu, quantos itens foram preservados e como retomar |
+| **Concluído** | CTA claro para o próximo passo do fluxo (ex: "Ir para Limpeza →") |
+| **Falha** | Mensagem de erro + botão "Tentar novamente" |
+
+```tsx
+// Exemplo — etapa idle
+<StepsCard
+  title="Passo a passo"
+  steps={[
+    { label: "Passo 1", description: "Descrição curta." },
+    { label: "Passo 2", description: "Descrição curta." },
+  ]}
+/>
+
+// Exemplo — processamento ativo
+<div className="flex items-start gap-2 p-3 bg-davint-50 rounded-lg mb-4">
+  {/* ícone info */}
+  <p className="text-xs text-davint-700">Aguarde nesta página…</p>
+</div>
+
+// Exemplo — interrompido
+<div className="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+  {/* ícone aviso */}
+  <div>
+    <p className="text-sm font-semibold text-yellow-800">Interrompido</p>
+    <p className="text-xs text-yellow-700 mt-1">Explicação do que ocorreu e como retomar.</p>
+  </div>
+</div>
+```
+
+### O que NÃO deve ser repetido inline
+
+- Header `<header>` — sempre usar `<PageHeader>`
+- Badge de status de coleta — sempre usar `<StatusBadge>`
+- Barra de progresso — sempre usar `<ProgressBar>`
+- Constantes `ROLE_LABEL`, `STATUS_LABEL`, `STATUS_COLOR` — vivem dentro dos componentes, não nas páginas
+
+### Adicionando um novo componente global
+
+1. Criar em `components/NomeDoComponente.tsx`
+2. Documentar na tabela acima no `frontend.md`
+3. Atualizar o `CLAUDE.md` na seção de componentização
+
 ## CSS (Tailwind CSS v3)
 
 O projeto usa **Tailwind CSS v3** com PostCSS. Não há CSS Modules nem outros frameworks CSS.
@@ -121,7 +230,7 @@ Layout e estilos de página ficam como classes Tailwind inline no JSX. Classes q
 ## Regras de segurança
 
 - Token JWT em `sessionStorage` (persiste o refresh, some ao fechar a aba) — nunca em `localStorage`
-- Campos de API key sempre com `type="password"` e `autoComplete="off"`
+- Campos de API key sempre com `type="password"` e `autoComplete="new-password"` (browsers modernos ignoram `"off"` — `"new-password"` impede o gerenciador de senhas de propor salvar)
 - Redirecionar para `/login` automaticamente em resposta 401
 - Variáveis de ambiente sempre via `import.meta.env.VITE_*` — nunca hardcoded
 

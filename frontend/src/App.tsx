@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider } from "./contexts/AuthContext";
 import { LoginPage } from "./pages/Auth/LoginPage";
+import { CollectPage } from "./pages/Collect/CollectPage";
 import { HomePage } from "./pages/Home/HomePage";
 import { UsersPage } from "./pages/Users/UsersPage";
 
@@ -18,6 +19,7 @@ export function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<HomePage />} />
+            <Route path="/collect" element={<CollectPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
