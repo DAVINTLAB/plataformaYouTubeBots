@@ -356,14 +356,14 @@ def fake_db():
 @pytest.fixture
 def stub_user_a(mocker):
     """Stub: get_current_user retorna pesquisador A."""
-    user = User(id=uuid.uuid4(), username="joao", role="user")
+    user = User(id=uuid.uuid4(), username="joao.silva", name="João Silva", role="user")
     mocker.patch("routers.annotate.get_current_user", return_value=user)
     return user
 
 @pytest.fixture
 def stub_user_b(mocker):
     """Stub: get_current_user retorna pesquisador B (para simular segundo anotador)."""
-    user = User(id=uuid.uuid4(), username="maria", role="user")
+    user = User(id=uuid.uuid4(), username="maria.souza", name="Maria Souza", role="user")
     mocker.patch("routers.annotate.get_current_user", return_value=user)
     return user
 ```
