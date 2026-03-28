@@ -13,6 +13,21 @@ jobs:
       run:
         working-directory: backend
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: davint
+          POSTGRES_PASSWORD: davint
+          POSTGRES_DB: davint
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v6
 
@@ -39,10 +54,13 @@ jobs:
         # pip-audit → rich → pygments, sem impacto para a API web.
         run: pip-audit -r requirements.txt --ignore-vuln CVE-2026-4539
 
+      - name: Create test database
+        run: PGPASSWORD=davint psql -h localhost -U davint -d davint -c "CREATE DATABASE davint_test;"
+
       - name: Tests with coverage
         run: pytest --cov=. --cov-fail-under=80
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
+          DATABASE_URL: postgresql://davint:davint@localhost:5432/davint
           SECRET_KEY: test-secret-key-for-ci
 
   frontend:

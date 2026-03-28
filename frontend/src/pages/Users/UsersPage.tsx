@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { usersApi } from "../../api/users";
+import { PageHeader } from "../../components/PageHeader";
 import { useAuthContext } from "../../contexts/AuthContext";
-import { useAuth } from "../Auth/useAuth";
 import { ChangePasswordModal } from "../Home/ChangePasswordModal";
 import { CreateUserModal } from "./CreateUserModal";
 import { ResetPasswordModal } from "./ResetPasswordModal";
@@ -15,8 +14,6 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function UsersPage() {
   const { user, token } = useAuthContext();
-  const { logout } = useAuth();
-  const navigate = useNavigate();
   const { users, loading, error, createUser, deactivateUser, reactivateUser } = useUsers();
   const [showModal, setShowModal] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -46,52 +43,10 @@ export function UsersPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <header className="flex items-center justify-between px-8 h-[60px] bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate("/")}
-            className="bg-transparent border-0 p-0 cursor-pointer flex-shrink-0"
-            aria-label="Voltar ao início"
-          >
-            <img src="/davint-logo.png" alt="DaVint Lab" className="h-7 w-auto" />
-          </button>
-          <span className="inline-block w-px h-5 bg-gray-200" aria-hidden="true" />
-          <nav className="flex items-center gap-1.5 text-sm">
-            <button
-              onClick={() => navigate("/")}
-              className="font-semibold text-gray-500 hover:text-davint-400 transition-colors bg-transparent border-0 cursor-pointer p-0"
-            >
-              Início
-            </button>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={2.5}
-              stroke="currentColor"
-              className="w-3 h-3 text-gray-300 flex-shrink-0"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-            </svg>
-            <span className="font-semibold text-gray-800">Usuários</span>
-          </nav>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-2 text-sm text-gray-500">
-            <span className="badge badge-admin">
-              {user ? (ROLE_LABEL[user.role] ?? user.role) : ""}
-            </span>
-            {user?.username}
-          </span>
-          <button className="btn btn-ghost" onClick={() => setShowChangePassword(true)}>
-            Alterar senha
-          </button>
-          <button className="btn btn-ghost" onClick={() => void logout()}>
-            Sair
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        breadcrumbs={[{ label: "Início", to: "/" }, { label: "Usuários" }]}
+        onChangePassword={() => setShowChangePassword(true)}
+      />
 
       {/* Conteúdo */}
       <main className="flex-1 px-8 py-9 max-w-4xl w-full mx-auto">

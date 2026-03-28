@@ -17,7 +17,9 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             detail="Credenciais inválidas.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(data={"sub": user.username, "role": user.role})
+    access_token = create_access_token(
+        data={"sub": user.username, "role": user.role, "name": user.name}
+    )
     return TokenResponse(access_token=access_token)
 
 

@@ -1,29 +1,48 @@
+import os
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 
 from database import Base, get_db
 from main import app
 from models.user import User
 from services.auth import get_current_user, get_password_hash
 
+# Banco de testes: usa DATABASE_URL do ambiente se definida, senão PostgreSQL local
+_base_url = os.getenv(
+    "DATABASE_URL", "postgresql://davint:davint@localhost:5432/davint"
+)
+# Troca o banco pelo banco de teste (evita poluir o banco de dev/prod)
+TEST_DATABASE_URL = _base_url.rsplit("/", 1)[0] + "/davint_test"
+
+
+@pytest.fixture(scope="session")
+def pg_engine():
+    engine = create_engine(TEST_DATABASE_URL)
+    Base.metadata.create_all(engine)
+    yield engine
+    Base.metadata.drop_all(engine)
+
 
 @pytest.fixture
-def db():
-    # StaticPool garante que todas as conexões usem o mesmo banco in-memory
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    with Session(engine) as session:
-        yield session
-    Base.metadata.drop_all(engine)
+def db(pg_engine):
+    """
+    Cada teste roda dentro de uma transação que é revertida ao final —
+    sem SQLite, sem dados residuais entre testes.
+    `join_transaction_mode='create_savepoint'` faz com que os commit()
+    internos apontem para um SAVEPOINT, não para a transação externa.
+    """
+    with pg_engine.connect() as connection:
+        connection.begin()
+        session = Session(connection, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            session.close()
+            connection.rollback()
 
 
 @pytest.fixture

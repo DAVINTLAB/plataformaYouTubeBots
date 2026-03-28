@@ -5,11 +5,13 @@ const TOKEN_KEY = "access_token";
 interface JWTPayload {
   sub: string;
   role: string;
+  name?: string;
   exp: number;
 }
 
 interface AuthUser {
   username: string;
+  name: string;
   role: string;
 }
 
@@ -39,7 +41,10 @@ function readStoredSession(): { token: string; user: AuthUser } | null {
     sessionStorage.removeItem(TOKEN_KEY);
     return null;
   }
-  return { token, user: { username: payload.sub, role: payload.role } };
+  return {
+    token,
+    user: { username: payload.sub, name: payload.name ?? payload.sub, role: payload.role },
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -52,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (payload) {
       sessionStorage.setItem(TOKEN_KEY, newToken);
       setToken(newToken);
-      setUser({ username: payload.sub, role: payload.role });
+      setUser({ username: payload.sub, name: payload.name ?? payload.sub, role: payload.role });
     }
   }, []);
 

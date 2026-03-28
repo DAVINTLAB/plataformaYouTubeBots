@@ -21,8 +21,13 @@ export async function request<T>(
   };
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { detail?: string };
-    throw new ApiError(body.detail ?? "Erro na requisição", res.status);
+    const body = (await res.json().catch(() => ({}))) as {
+      detail?: string | Array<{ msg: string; loc: (string | number)[] }>;
+    };
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((e) => e.msg).join("; ")
+      : (body.detail ?? "Erro na requisição");
+    throw new ApiError(detail, res.status);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

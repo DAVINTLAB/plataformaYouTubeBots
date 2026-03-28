@@ -66,9 +66,15 @@ Arquitetura em Camadas com princípios de Clean Architecture aplicados onde agre
 └── frontend/
     └── src/
         ├── pages/            # telas por US
-        ├── components/       # componentes reutilizáveis (SRP — uma responsabilidade visual)
+        ├── components/       # componentes reutilizáveis — obrigatório para qualquer elemento usado em 2+ páginas
+        │   ├── PageHeader.tsx    # header padrão (logo, breadcrumb, usuário) — obrigatório em toda página autenticada
+        │   ├── StatusBadge.tsx   # badge colorido de status de coleta
+        │   ├── ProgressBar.tsx   # barra de progresso determinada ou indeterminada
+        │   └── ProtectedRoute.tsx
         ├── hooks/            # lógica isolada em hooks (useAnnotation, useClean, etc.)
+        ├── contexts/         # AuthContext — token, user (username + name + role), isAdmin
         └── api/              # chamadas ao backend — componentes nunca fazem fetch diretamente (DIP)
+            └── http.ts       # request() centralizado — trata erros 422 (detail array → string)
 ```
 
 ## Princípios SOLID
@@ -78,6 +84,7 @@ Aplicados em backend e frontend.
 **SRP — Single Responsibility**
 - Backend: `routers/` só lida com HTTP, `services/` só orquestra lógica, `repositories/` só acessa o banco
 - Frontend: componentes têm responsabilidade visual; lógica de negócio fica em hooks customizados
+- Frontend — componentização obrigatória: qualquer elemento visual usado em 2+ páginas **deve** viver em `components/`; páginas nunca reimplementam inline o que já existe como componente (header, badges, barras de progresso)
 
 **OCP — Open/Closed**
 - Algoritmos de limpeza da US-03 implementam `SelectorBase` — adicionar novo critério = nova classe, sem modificar as existentes
@@ -94,20 +101,40 @@ Aplicados em backend e frontend.
 - Backend: serviços recebem repositórios injetados via construtor — nunca os instanciam; FastAPI injeta via `Depends()`
 - Frontend: componentes consomem dados via hooks e `api/` — nunca fazem `fetch` diretamente
 
+## Banco de dados
+
+**Regra absoluta: nunca usar SQLite — nem em testes.**
+
+| Ambiente | Banco | Como configurar |
+|----------|-------|-----------------|
+| Desenvolvimento local | PostgreSQL via Docker Compose | `docker compose up -d` → `DATABASE_URL=postgresql://davint:davint@localhost:5432/davint` |
+| Testes locais | PostgreSQL via Docker Compose (banco `davint_test`) | `DATABASE_URL=postgresql://davint:davint@localhost:5432/davint` (conftest deriva `davint_test` automaticamente) |
+| CI/CD (GitHub Actions) | PostgreSQL service container | definir `DATABASE_URL` no workflow |
+| Produção (Vercel) | Neon PostgreSQL serverless | injetado automaticamente via integração Neon |
+
+Os testes usam transações com `join_transaction_mode="create_savepoint"` — cada teste roda num SAVEPOINT que é revertido ao final, sem deixar dados residuais. É o equivalente Python ao H2 in-memory do ecossistema Java.
+
 ## Comandos
 
 ```bash
-# Backend
-cd backend && uvicorn main:app --reload     # dev local
-cd backend && pytest                        # testes
-cd backend && alembic upgrade head          # migrations
+# Pré-requisito: Docker rodando
+docker compose up -d
+
+# Backend — sem --reload no Windows (StatReload não recarrega módulos corretamente)
+cd backend
+source .venv/Scripts/activate
+DATABASE_URL=postgresql://davint:davint@localhost:5432/davint uvicorn main:app --port 8000
+
+# Testes — PostgreSQL obrigatório, davint_test criado automaticamente pelo conftest
+cd backend
+DATABASE_URL=postgresql://davint:davint@localhost:5432/davint pytest
+
+# Migrations
+cd backend && DATABASE_URL=postgresql://davint:davint@localhost:5432/davint alembic upgrade head
 
 # Frontend
 cd frontend && npm run dev                  # dev local
 cd frontend && npm run build               # build produção
-
-# Banco local (desenvolvimento)
-docker compose up -d                        # sobe PostgreSQL local via Docker
 ```
 
 ## Variáveis de ambiente
@@ -179,6 +206,7 @@ Arquivo `.github/dependabot.yml` configurado para:
 - Datasets nomeados como `{idVideo}_{critérios}` — ex: `abc123_media`, `abc123_percentil_intervalo`
 - Apenas datasets selecionados (suspeitos) são persistidos — excluídos não são armazenados
 - Timeout de 10s por request no Vercel free tier — operações longas (coleta, limpeza) devem ser assíncronas ou paginadas
+- **Cards de instrução obrigatórios em páginas de US**: toda página de US deve orientar o usuário em cada etapa do fluxo — use `<StepsCard>` no estado inicial, notice `bg-davint-50` durante processamento ativo, banner `bg-yellow-50` para estados interrompidos, CTA claro ao concluir. Ver `.claude/frontend.md` § "Cards de instrução por etapa"
 
 ## Regras de negócio críticas
 
