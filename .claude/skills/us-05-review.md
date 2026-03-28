@@ -42,9 +42,9 @@ Lista conflitos com filtros opcionais.
     "dataset_name": "dQw4w9_percentil",
     "author_display_name": "string",
     "label_a": "bot",
-    "annotator_a": "user_joao",
+    "annotator_a": "João Silva",
     "label_b": "humano",
-    "annotator_b": "user_maria",
+    "annotator_b": "Maria Souza",
     "status": "pending",
     "created_at": "2024-01-01T00:00:00Z"
   }
@@ -72,13 +72,13 @@ Detalhe completo de um conflito para a tela de decisão.
     }
   ],
   "annotation_a": {
-    "annotator": "user_joao",
+    "annotator": "João Silva",
     "label": "bot",
     "justificativa": "Texto repetido em vários comentários.",
     "annotated_at": "2024-01-01T00:00:00Z"
   },
   "annotation_b": {
-    "annotator": "user_maria",
+    "annotator": "Maria Souza",
     "label": "humano",
     "justificativa": null,
     "annotated_at": "2024-01-01T00:10:00Z"
@@ -130,7 +130,7 @@ Registra a decisão do admin para um conflito.
   "conflict_id": "uuid",
   "status": "resolved",
   "resolved_label": "bot",
-  "resolved_by": "admin_carlos",
+  "resolved_by": "Carlos Admin",
   "resolved_at": "2024-01-01T00:20:00Z"
 }
 ```
@@ -189,7 +189,7 @@ class ResolveRequest(BaseModel):
     resolved_label: Literal["bot", "humano"]
 
 class AnnotationSide(BaseModel):
-    annotator: str
+    annotator: str  # users.name do pesquisador (não username)
     label: str
     justificativa: str | None
     annotated_at: datetime
@@ -292,14 +292,14 @@ pages/Review/
 @pytest.fixture
 def stub_admin(mocker):
     """Stub: get_current_user retorna admin."""
-    admin = User(id=uuid.uuid4(), username="carlos", role="admin")
+    admin = User(id=uuid.uuid4(), username="carlos.admin", name="Carlos Admin", role="admin")
     mocker.patch("routers.review.get_current_user", return_value=admin)
     return admin
 
 @pytest.fixture
 def stub_user(mocker):
     """Stub: get_current_user retorna pesquisador sem permissão de admin."""
-    user = User(id=uuid.uuid4(), username="joao", role="user")
+    user = User(id=uuid.uuid4(), username="joao.silva", name="João Silva", role="user")
     mocker.patch("routers.review.get_current_user", return_value=user)
     return user
 
