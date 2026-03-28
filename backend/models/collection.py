@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint  # noqa: F401
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -54,7 +62,9 @@ class Comment(Base):
 
     # Full YouTube API fields — populated during collection and import
     text_display: Mapped[str | None] = mapped_column(Text, nullable=True)
-    author_profile_image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    author_profile_image_url: Mapped[str | None] = mapped_column(
+        String(512), nullable=True
+    )
     author_channel_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     author_channel_published_at: Mapped[datetime | None] = mapped_column(nullable=True)
 

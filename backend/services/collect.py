@@ -83,7 +83,7 @@ def _insert_single_comment(
     parent_id: str | None = None,
     total_reply_count: int = 0,
 ) -> bool:
-    """Insere um comentário (top-level ou reply) se não existir. Retorna True se inseriu."""
+    """Insere um comentário se não existir. Retorna True se inseriu."""
     exists = (
         db.query(Comment.id)
         .filter(
@@ -110,9 +110,7 @@ def _insert_single_comment(
         published_at=datetime.fromisoformat(
             snippet["publishedAt"].replace("Z", "+00:00")
         ),
-        updated_at=datetime.fromisoformat(
-            snippet["updatedAt"].replace("Z", "+00:00")
-        ),
+        updated_at=datetime.fromisoformat(snippet["updatedAt"].replace("Z", "+00:00")),
     )
     db.add(comment)
     return True
@@ -193,9 +191,9 @@ def _extract_new_channel_ids(
             page_ids.add(top_cid)
         # Reply authors
         for reply in item.get("replies", {}).get("comments", []):
-            reply_cid = (
-                reply.get("snippet", {}).get("authorChannelId") or {}
-            ).get("value")
+            reply_cid = (reply.get("snippet", {}).get("authorChannelId") or {}).get(
+                "value"
+            )
             if reply_cid:
                 page_ids.add(reply_cid)
 
@@ -241,7 +239,7 @@ async def _enrich_channel_dates(
         return True
     except Exception:
         logger.warning(
-            "Falha ao buscar datas de criação de canais para coleta %s — dados omitidos.",
+            "Falha ao buscar datas de criação de canais — coleta %s.",
             collection_id,
         )
         return False
@@ -295,9 +293,7 @@ async def start_collection(
             inline_count = len(item.get("replies", {}).get("comments", []))
             if total_replies > inline_count:
                 parent_id = item["snippet"]["topLevelComment"]["id"]
-                await _fetch_remaining_replies(
-                    db, collection.id, parent_id, api_key
-                )
+                await _fetch_remaining_replies(db, collection.id, parent_id, api_key)
 
         # Datas de criação dos canais dos autores (channels.list — batches de 50)
         new_channel_ids = _extract_new_channel_ids(db, collection.id, items)
@@ -387,9 +383,7 @@ async def collect_next_page(
             inline_count = len(item.get("replies", {}).get("comments", []))
             if total_replies > inline_count:
                 parent_id = item["snippet"]["topLevelComment"]["id"]
-                await _fetch_remaining_replies(
-                    db, collection.id, parent_id, api_key
-                )
+                await _fetch_remaining_replies(db, collection.id, parent_id, api_key)
 
         # Datas de criação apenas para autores não resolvidos ainda
         new_channel_ids = _extract_new_channel_ids(db, collection.id, items)

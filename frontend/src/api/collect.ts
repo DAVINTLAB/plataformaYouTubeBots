@@ -130,9 +130,11 @@ export const collectApi = {
     const chunks: Uint8Array[] = [];
     let received = 0;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    let done = false;
+    while (!done) {
+      const result = await reader.read();
+      done = result.done;
+      const value = result.value;
       if (value) {
         chunks.push(value);
         received += value.length;

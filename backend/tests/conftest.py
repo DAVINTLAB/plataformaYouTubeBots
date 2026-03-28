@@ -12,7 +12,9 @@ from models.user import User
 from services.auth import get_current_user, get_password_hash
 
 # Banco de testes: usa DATABASE_URL do ambiente se definida, senão PostgreSQL local
-_base_url = os.getenv("DATABASE_URL", "postgresql://davint:davint@localhost:5432/davint")
+_base_url = os.getenv(
+    "DATABASE_URL", "postgresql://davint:davint@localhost:5432/davint"
+)
 # Troca o banco pelo banco de teste (evita poluir o banco de dev/prod)
 TEST_DATABASE_URL = _base_url.rsplit("/", 1)[0] + "/davint_test"
 

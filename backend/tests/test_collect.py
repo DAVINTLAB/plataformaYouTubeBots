@@ -246,9 +246,7 @@ def test_youtube_400_key_invalid_retorna_400_com_mensagem_amigavel(
     """Stub: 400 com reason keyInvalid retorna 400 com mensagem de API key."""
     mock_response = MagicMock()
     mock_response.status_code = 400
-    mock_response.json.return_value = {
-        "error": {"errors": [{"reason": "keyInvalid"}]}
-    }
+    mock_response.json.return_value = {"error": {"errors": [{"reason": "keyInvalid"}]}}
     exc = httpx.HTTPStatusError("400", request=MagicMock(), response=mock_response)
     mocker.patch(
         "services.collect.fetch_comments_page",

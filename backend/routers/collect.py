@@ -239,9 +239,7 @@ def export_endpoint(
         io.BytesIO(content_bytes),
         media_type="application/json",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="{video_id}_comments.json"'
-            ),
+            "Content-Disposition": (f'attachment; filename="{video_id}_comments.json"'),
             "Content-Length": str(len(content_bytes)),
         },
     )

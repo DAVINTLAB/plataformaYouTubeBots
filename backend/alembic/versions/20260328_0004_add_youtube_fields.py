@@ -20,19 +20,39 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     # Video metadata on collections (populated on YouTube import)
-    op.add_column("collections", sa.Column("video_title", sa.String(500), nullable=True))
-    op.add_column("collections", sa.Column("video_description", sa.Text(), nullable=True))
-    op.add_column("collections", sa.Column("video_channel_id", sa.String(64), nullable=True))
-    op.add_column("collections", sa.Column("video_channel_title", sa.String(256), nullable=True))
-    op.add_column("collections", sa.Column("video_published_at", sa.DateTime(), nullable=True))
-    op.add_column("collections", sa.Column("video_view_count", sa.BigInteger(), nullable=True))
-    op.add_column("collections", sa.Column("video_like_count", sa.BigInteger(), nullable=True))
-    op.add_column("collections", sa.Column("video_comment_count", sa.BigInteger(), nullable=True))
+    op.add_column(
+        "collections", sa.Column("video_title", sa.String(500), nullable=True)
+    )
+    op.add_column(
+        "collections", sa.Column("video_description", sa.Text(), nullable=True)
+    )
+    op.add_column(
+        "collections", sa.Column("video_channel_id", sa.String(64), nullable=True)
+    )
+    op.add_column(
+        "collections", sa.Column("video_channel_title", sa.String(256), nullable=True)
+    )
+    op.add_column(
+        "collections", sa.Column("video_published_at", sa.DateTime(), nullable=True)
+    )
+    op.add_column(
+        "collections", sa.Column("video_view_count", sa.BigInteger(), nullable=True)
+    )
+    op.add_column(
+        "collections", sa.Column("video_like_count", sa.BigInteger(), nullable=True)
+    )
+    op.add_column(
+        "collections", sa.Column("video_comment_count", sa.BigInteger(), nullable=True)
+    )
 
     # Full YouTube comment fields on comments
     op.add_column("comments", sa.Column("text_display", sa.Text(), nullable=True))
-    op.add_column("comments", sa.Column("author_profile_image_url", sa.String(512), nullable=True))
-    op.add_column("comments", sa.Column("author_channel_url", sa.String(512), nullable=True))
+    op.add_column(
+        "comments", sa.Column("author_profile_image_url", sa.String(512), nullable=True)
+    )
+    op.add_column(
+        "comments", sa.Column("author_channel_url", sa.String(512), nullable=True)
+    )
     op.add_column("comments", sa.Column("is_public", sa.Boolean(), nullable=True))
     op.add_column("comments", sa.Column("can_reply", sa.Boolean(), nullable=True))
 
