@@ -3,6 +3,7 @@ import { request } from "./http";
 export interface UserOut {
   id: string;
   username: string;
+  name: string;
   role: string;
   created_at: string;
   is_active: boolean;
@@ -10,6 +11,7 @@ export interface UserOut {
 
 export interface UserCreate {
   username: string;
+  name: string;
   password: string;
 }
 

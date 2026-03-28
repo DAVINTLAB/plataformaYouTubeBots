@@ -41,6 +41,7 @@ def client(db):
 def admin_user(db):
     user = User(
         username="admin",
+        name="Admin Teste",
         hashed_password=get_password_hash("adminpass1"),
         role="admin",
     )
@@ -54,6 +55,7 @@ def admin_user(db):
 def regular_user(db):
     user = User(
         username="user1",
+        name="Usuário Teste",
         hashed_password=get_password_hash("userpass1!"),
         role="user",
     )
@@ -83,6 +85,7 @@ def fake_admin():
     return User(
         id=uuid.uuid4(),
         username="admin",
+        name="Admin Fake",
         hashed_password="hash",
         role="admin",
         is_active=True,
@@ -95,6 +98,7 @@ def fake_user():
     return User(
         id=uuid.uuid4(),
         username="user1",
+        name="Usuário Fake",
         hashed_password="hash",
         role="user",
         is_active=True,

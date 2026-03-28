@@ -6,6 +6,7 @@ def test_login_valid_credentials_returns_jwt(client, db):
     """Fake: banco SQLite com usuário pré-criado. Bcrypt real."""
     user = User(
         username="testuser",
+        name="Usuário Teste",
         hashed_password=get_password_hash("password123"),
         role="user",
     )
@@ -24,7 +25,12 @@ def test_login_valid_credentials_returns_jwt(client, db):
 
 def test_login_invalid_credentials_returns_generic_401(client, db, mocker):
     """Stub: verify_password retorna False. Mensagem não revela qual campo falhou."""
-    user = User(username="testuser", hashed_password="some_hash", role="user")
+    user = User(
+        username="testuser",
+        name="Usuário Teste",
+        hashed_password="some_hash",
+        role="user",
+    )
     db.add(user)
     db.commit()
 

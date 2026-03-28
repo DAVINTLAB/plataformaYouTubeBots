@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -16,7 +16,20 @@ class TokenResponse(BaseModel):
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
+    name: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=8)
+
+    @field_validator("username")
+    @classmethod
+    def username_format(cls, v: str) -> str:
+        import re
+
+        if not re.fullmatch(r"[a-z0-9_.]+", v):
+            raise ValueError(
+                "Username deve conter apenas letras minúsculas, "
+                "dígitos, ponto ou sublinhado."
+            )
+        return v
 
 
 class ChangePasswordRequest(BaseModel):
@@ -31,6 +44,7 @@ class ResetPasswordRequest(BaseModel):
 class UserOut(BaseModel):
     id: uuid.UUID
     username: str
+    name: str
     role: str
     created_at: datetime
     is_active: bool

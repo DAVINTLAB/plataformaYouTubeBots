@@ -29,11 +29,12 @@ def test_admin_can_create_user(client, db, fake_admin):
 
     response = client.post(
         "/users/",
-        json={"username": "newuser", "password": "password123"},
+        json={"username": "newuser", "name": "Novo Usuário", "password": "password123"},
     )
     assert response.status_code == 201
     data = response.json()
     assert data["username"] == "newuser"
+    assert data["name"] == "Novo Usuário"
     assert data["role"] == "user"
     assert "id" in data
     assert "created_at" in data
@@ -45,6 +46,7 @@ def test_create_user_duplicate_username_returns_409(client, db, fake_admin):
 
     existing = User(
         username="duplicate",
+        name="Usuário Duplicado",
         hashed_password=get_password_hash("pass1234"),
         role="user",
     )
@@ -53,7 +55,7 @@ def test_create_user_duplicate_username_returns_409(client, db, fake_admin):
 
     response = client.post(
         "/users/",
-        json={"username": "duplicate", "password": "password123"},
+        json={"username": "duplicate", "name": "Outro Nome", "password": "password123"},
     )
     assert response.status_code == 409
 
@@ -80,7 +82,32 @@ def test_create_user_short_password_returns_422(client, fake_admin):
 
     response = client.post(
         "/users/",
-        json={"username": "newuser", "password": "short"},
+        json={"username": "newuser", "name": "Novo Usuário", "password": "short"},
+    )
+    assert response.status_code == 422
+
+
+def test_create_user_invalid_username_returns_422(client, fake_admin):
+    """Username com caracteres inválidos (maiúsculas, espaço) retorna 422."""
+    app.dependency_overrides[get_current_user] = lambda: fake_admin
+
+    for bad_username in ("NewUser", "new user", "new@user", "NEW"):
+        response = client.post(
+            "/users/",
+            json={"username": bad_username, "name": "Teste", "password": "password123"},
+        )
+        assert (
+            response.status_code == 422
+        ), f"esperado 422 para username={bad_username!r}"
+
+
+def test_create_user_missing_name_returns_422(client, fake_admin):
+    """Campo name ausente retorna 422 (validação Pydantic)."""
+    app.dependency_overrides[get_current_user] = lambda: fake_admin
+
+    response = client.post(
+        "/users/",
+        json={"username": "newuser", "password": "password123"},
     )
     assert response.status_code == 422
 

@@ -20,6 +20,7 @@ def create_user(db: Session, data: UserCreate) -> User:
         )
     user = User(
         username=data.username,
+        name=data.name,
         hashed_password=get_password_hash(data.password),
         role="user",
     )
