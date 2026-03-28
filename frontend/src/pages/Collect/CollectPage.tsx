@@ -45,9 +45,7 @@ export function CollectPage() {
     percent: number;
   } | null>(null);
 
-  const isRunning =
-    active !== null &&
-    (active.status === "running" || active.status === "pending");
+  const isRunning = active !== null && (active.status === "running" || active.status === "pending");
 
   const isInterrupted = isRunning && !isActivelyPolling;
 
@@ -111,20 +109,12 @@ export function CollectPage() {
     setResumeApiKey("");
   }
 
-  async function handleDownload(
-    collectionId: string,
-    format: "json" | "csv",
-    videoId: string
-  ) {
+  async function handleDownload(collectionId: string, format: "json" | "csv", videoId: string) {
     if (!token) return;
     setDownloadState({ id: collectionId, format, percent: 0 });
     try {
-      await collectApi.downloadExport(
-        collectionId,
-        format,
-        token,
-        videoId,
-        (percent) => setDownloadState({ id: collectionId, format, percent })
+      await collectApi.downloadExport(collectionId, format, token, videoId, (percent) =>
+        setDownloadState({ id: collectionId, format, percent })
       );
     } catch {
       // silently ignore download errors
@@ -135,9 +125,7 @@ export function CollectPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <PageHeader
-        breadcrumbs={[{ label: "Início", to: "/" }, { label: "Coletar Comentários" }]}
-      />
+      <PageHeader breadcrumbs={[{ label: "Início", to: "/" }, { label: "Coletar Comentários" }]} />
 
       {/* Main */}
       <main className="flex-1 px-8 py-9 max-w-3xl w-full mx-auto">
@@ -205,53 +193,53 @@ export function CollectPage() {
               ]}
             />
             <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-              <div className="form-group">
-                <label className="form-label" htmlFor="video_id">
-                  ID ou URL do vídeo
-                </label>
-                <input
-                  id="video_id"
-                  className="form-input"
-                  type="text"
-                  placeholder="dQw4w9WgXcQ ou https://youtube.com/watch?v=..."
-                  value={videoId}
-                  onChange={(e) => setVideoId(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
+              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="video_id">
+                    ID ou URL do vídeo
+                  </label>
+                  <input
+                    id="video_id"
+                    className="form-input"
+                    type="text"
+                    placeholder="dQw4w9WgXcQ ou https://youtube.com/watch?v=..."
+                    value={videoId}
+                    onChange={(e) => setVideoId(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                </div>
 
-              <div className="form-group">
-                <label className="form-label" htmlFor="api_key">
-                  API Key do YouTube
-                </label>
-                <input
-                  id="api_key"
-                  className="form-input"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="AIza..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  A chave é usada apenas durante esta coleta e descartada em seguida.
-                </p>
-              </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="api_key">
+                    API Key do YouTube
+                  </label>
+                  <input
+                    id="api_key"
+                    className="form-input"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="AIza..."
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    A chave é usada apenas durante esta coleta e descartada em seguida.
+                  </p>
+                </div>
 
-              {error && <div className="alert alert-error">{error}</div>}
+                {error && <div className="alert alert-error">{error}</div>}
 
-              <button
-                type="submit"
-                className="btn btn-primary btn-full"
-                disabled={loading || !videoId.trim() || !apiKey.trim()}
-              >
-                {loading ? "Iniciando…" : "Iniciar Coleta"}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-full"
+                  disabled={loading || !videoId.trim() || !apiKey.trim()}
+                >
+                  {loading ? "Iniciando…" : "Iniciar Coleta"}
+                </button>
+              </form>
             </div>
           </>
         )}
@@ -264,8 +252,7 @@ export function CollectPage() {
                 Formato esperado
               </h3>
               <p className="text-xs text-gray-600 mb-3">
-                O arquivo deve ser um JSON no formato exportado pela plataforma,
-                com as chaves{" "}
+                O arquivo deve ser um JSON no formato exportado pela plataforma, com as chaves{" "}
                 <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">
                   video
                 </code>{" "}
@@ -323,42 +310,38 @@ export function CollectPage() {
 }`}</pre>
               </details>
               <p className="text-xs text-gray-400">
-                Este é o mesmo formato gerado pelo botão de exportação JSON.
-                Coletas exportadas podem ser reimportadas diretamente.
+                Este é o mesmo formato gerado pelo botão de exportação JSON. Coletas exportadas
+                podem ser reimportadas diretamente.
               </p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-            <form onSubmit={handleImport} className="flex flex-col gap-5">
-              <div className="form-group">
-                <label className="form-label" htmlFor="import_file">
-                  Arquivo JSON
-                </label>
-                <input
-                  id="import_file"
-                  className="form-input"
-                  type="file"
-                  accept=".json"
-                  onChange={(e) =>
-                    setImportFile(e.target.files?.[0] ?? null)
-                  }
-                  required
-                  disabled={loading}
-                />
-              </div>
+              <form onSubmit={handleImport} className="flex flex-col gap-5">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="import_file">
+                    Arquivo JSON
+                  </label>
+                  <input
+                    id="import_file"
+                    className="form-input"
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                    required
+                    disabled={loading}
+                  />
+                </div>
 
-              {importParseError && (
-                <div className="alert alert-error">{importParseError}</div>
-              )}
-              {error && <div className="alert alert-error">{error}</div>}
+                {importParseError && <div className="alert alert-error">{importParseError}</div>}
+                {error && <div className="alert alert-error">{error}</div>}
 
-              <button
-                type="submit"
-                className="btn btn-primary btn-full"
-                disabled={loading || !importFile}
-              >
-                {loading ? "Importando…" : "Importar Comentários"}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-full"
+                  disabled={loading || !importFile}
+                >
+                  {loading ? "Importando…" : "Importar Comentários"}
+                </button>
+              </form>
             </div>
           </>
         )}
@@ -371,9 +354,7 @@ export function CollectPage() {
                 <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
                   Vídeo
                 </p>
-                <p className="text-base font-mono font-semibold text-gray-800">
-                  {active.video_id}
-                </p>
+                <p className="text-base font-mono font-semibold text-gray-800">{active.video_id}</p>
               </div>
               <StatusBadge status={active.status} />
             </div>
@@ -403,13 +384,10 @@ export function CollectPage() {
                     />
                   </svg>
                   <div>
-                    <p className="text-sm font-medium text-gray-700">
-                      Coletando comentários…
-                    </p>
+                    <p className="text-sm font-medium text-gray-700">Coletando comentários…</p>
                     {active.total_comments != null && active.total_comments > 0 && (
                       <p className="text-xs text-gray-400 mt-0.5">
-                        {active.total_comments.toLocaleString("pt-BR")} coletados
-                        até agora
+                        {active.total_comments.toLocaleString("pt-BR")} coletados até agora
                       </p>
                     )}
                   </div>
@@ -428,9 +406,9 @@ export function CollectPage() {
                     />
                   </svg>
                   <p className="text-xs text-davint-700">
-                    Aguarde nesta página enquanto a coleta estiver em andamento.
-                    Se navegar para outra tela, a coleta pausa — mas os dados
-                    coletados são preservados e você pode retomá-la aqui.
+                    Aguarde nesta página enquanto a coleta estiver em andamento. Se navegar para
+                    outra tela, a coleta pausa — mas os dados coletados são preservados e você pode
+                    retomá-la aqui.
                   </p>
                 </div>
               </>
@@ -453,23 +431,20 @@ export function CollectPage() {
                     />
                   </svg>
                   <div>
-                    <p className="text-sm font-semibold text-yellow-800">
-                      Coleta interrompida
-                    </p>
+                    <p className="text-sm font-semibold text-yellow-800">Coleta interrompida</p>
                     <p className="text-xs text-yellow-700 mt-1">
-                      Você navegou para outra página enquanto a coleta estava
-                      em andamento. Os dados coletados estão preservados no
-                      banco.
+                      Você navegou para outra página enquanto a coleta estava em andamento. Os dados
+                      coletados estão preservados no banco.
                     </p>
                     {active.total_comments != null && active.total_comments > 0 && (
                       <p className="text-xs font-medium text-yellow-700 mt-1">
-                        {active.total_comments.toLocaleString("pt-BR")}{" "}
-                        comentários salvos até a interrupção.
+                        {active.total_comments.toLocaleString("pt-BR")} comentários salvos até a
+                        interrupção.
                       </p>
                     )}
                     <p className="text-xs text-yellow-700 mt-1">
-                      Para continuar de onde parou, informe a API key abaixo —
-                      a coleta retomará da última página salva.
+                      Para continuar de onde parou, informe a API key abaixo — a coleta retomará da
+                      última página salva.
                     </p>
                   </div>
                 </div>
@@ -499,9 +474,7 @@ export function CollectPage() {
             {active.status === "completed" && (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-gray-600">
-                  <span className="font-semibold text-gray-800">
-                    {active.total_comments ?? 0}
-                  </span>{" "}
+                  <span className="font-semibold text-gray-800">{active.total_comments ?? 0}</span>{" "}
                   comentários coletados com sucesso.
                 </p>
                 {active.channel_dates_failed === true && (
@@ -519,8 +492,8 @@ export function CollectPage() {
                       />
                     </svg>
                     <p className="text-xs text-yellow-700">
-                      Não foi possível obter as datas de criação dos canais dos
-                      autores. Os demais dados foram coletados normalmente.
+                      Não foi possível obter as datas de criação dos canais dos autores. Os demais
+                      dados foram coletados normalmente.
                     </p>
                   </div>
                 )}
@@ -530,10 +503,7 @@ export function CollectPage() {
                   </p>
                 )}
                 <div className="flex gap-3">
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => navigate("/clean")}
-                  >
+                  <button className="btn btn-primary" onClick={() => navigate("/clean")}>
                     Ir para Limpeza →
                   </button>
                   <button className="btn btn-ghost" onClick={handleNewCollection}>
@@ -583,19 +553,14 @@ export function CollectPage() {
                 </thead>
                 <tbody className="px-6">
                   {collections.map((col) => (
-                    <tr
-                      key={col.collection_id}
-                      className="border-b border-gray-100 last:border-0"
-                    >
+                    <tr key={col.collection_id} className="border-b border-gray-100 last:border-0">
                       <td className="py-3 pl-6 pr-4 max-w-[280px]">
                         {col.video_title && (
                           <p className="text-sm font-medium text-gray-800 line-clamp-2">
                             {col.video_title}
                           </p>
                         )}
-                        <p className="text-xs font-mono text-gray-400">
-                          {col.video_id}
-                        </p>
+                        <p className="text-xs font-mono text-gray-400">{col.video_id}</p>
                       </td>
                       <td className="py-3 pr-4">
                         <StatusBadge status={col.status} size="sm" />
@@ -626,11 +591,7 @@ export function CollectPage() {
                                 <button
                                   className="text-xs font-medium text-davint-400 hover:text-davint-500 hover:underline transition-colors"
                                   onClick={() =>
-                                    void handleDownload(
-                                      col.collection_id,
-                                      "json",
-                                      col.video_id
-                                    )
+                                    void handleDownload(col.collection_id, "json", col.video_id)
                                   }
                                 >
                                   JSON
@@ -638,11 +599,7 @@ export function CollectPage() {
                                 <button
                                   className="text-xs font-medium text-davint-400 hover:text-davint-500 hover:underline transition-colors"
                                   onClick={() =>
-                                    void handleDownload(
-                                      col.collection_id,
-                                      "csv",
-                                      col.video_id
-                                    )
+                                    void handleDownload(col.collection_id, "csv", col.video_id)
                                   }
                                 >
                                   CSV

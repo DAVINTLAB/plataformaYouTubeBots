@@ -60,20 +60,10 @@ export interface ImportRequest {
 }
 
 export const collectApi = {
-  start: (
-    data: { video_id: string; api_key: string },
-    token: string
-  ) =>
-    request<CollectionStarted>(
-      "/collect",
-      { method: "POST", body: JSON.stringify(data) },
-      token
-    ),
+  start: (data: { video_id: string; api_key: string }, token: string) =>
+    request<CollectionStarted>("/collect", { method: "POST", body: JSON.stringify(data) }, token),
 
-  nextPage: (
-    data: { collection_id: string; api_key: string },
-    token: string
-  ) =>
+  nextPage: (data: { collection_id: string; api_key: string }, token: string) =>
     request<CollectionStarted>(
       "/collect/next-page",
       { method: "POST", body: JSON.stringify(data) },
@@ -88,11 +78,7 @@ export const collectApi = {
     ),
 
   getStatus: (collectionId: string, token: string) =>
-    request<CollectionStatus>(
-      `/collect/status?collection_id=${collectionId}`,
-      {},
-      token
-    ),
+    request<CollectionStatus>(`/collect/status?collection_id=${collectionId}`, {}, token),
 
   list: (token: string) => request<CollectionSummary[]>("/collect", {}, token),
 
@@ -106,10 +92,9 @@ export const collectApi = {
     videoId: string,
     onProgress?: (percent: number) => void
   ): Promise<void> => {
-    const res = await fetch(
-      `${API_URL}/collect/${collectionId}/export?format=${format}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const res = await fetch(`${API_URL}/collect/${collectionId}/export?format=${format}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { detail?: string };
       throw new ApiError(body.detail ?? "Erro ao exportar.", res.status);

@@ -133,7 +133,6 @@ function IconUsers() {
 
 const PIPELINE_STAGES: StageCard[] = [
   {
-
     step: 1,
     title: "Coletar Comentários",
     description:
@@ -144,7 +143,6 @@ const PIPELINE_STAGES: StageCard[] = [
     icon: <IconCloudArrowDown />,
   },
   {
-
     step: 2,
     title: "Limpar Dataset",
     description:
@@ -155,7 +153,6 @@ const PIPELINE_STAGES: StageCard[] = [
     icon: <IconFunnel />,
   },
   {
-
     step: 3,
     title: "Anotar Comentários",
     description:
@@ -166,7 +163,6 @@ const PIPELINE_STAGES: StageCard[] = [
     icon: <IconTag />,
   },
   {
-
     step: 4,
     title: "Revisar Conflitos",
     description:
@@ -177,7 +173,6 @@ const PIPELINE_STAGES: StageCard[] = [
     icon: <IconCheckCircle />,
   },
   {
-
     step: 5,
     title: "Dashboard",
     description:
@@ -191,7 +186,6 @@ const PIPELINE_STAGES: StageCard[] = [
 
 const ADMIN_CARDS: StageCard[] = [
   {
-
     step: 0,
     title: "Gerenciar Usuários",
     description: "Crie e remova contas de anotadores da plataforma.",

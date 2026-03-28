@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  collectApi,
-  CollectionStarted,
-  CollectionSummary,
-  ImportRequest,
-} from "../../api/collect";
+import { collectApi, CollectionStarted, CollectionSummary, ImportRequest } from "../../api/collect";
 import { useAuthContext } from "../../contexts/AuthContext";
 
 const STORAGE_KEY = "davint_active_collection_id";
@@ -137,10 +132,7 @@ export function useCollect() {
       apiKeyRef.current = apiKey;
 
       try {
-        const result = await collectApi.start(
-          { video_id: videoId, api_key: apiKey },
-          token
-        );
+        const result = await collectApi.start({ video_id: videoId, api_key: apiKey }, token);
         sessionStorage.setItem(STORAGE_KEY, result.collection_id);
         setState((s) => ({ ...s, active: result, loading: false }));
 
@@ -210,8 +202,7 @@ export function useCollect() {
         setState((s) => ({
           ...s,
           loading: false,
-          error:
-            err instanceof Error ? err.message : "Erro ao importar arquivo.",
+          error: err instanceof Error ? err.message : "Erro ao importar arquivo.",
         }));
       }
     },

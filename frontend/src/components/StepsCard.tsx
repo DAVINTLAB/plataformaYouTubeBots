@@ -11,9 +11,7 @@ interface StepsCardProps {
 export function StepsCard({ title = "Como funciona", steps }: StepsCardProps) {
   return (
     <div className="bg-davint-50 rounded-xl p-5 mb-6">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-davint-600 mb-4">
-        {title}
-      </h3>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-davint-600 mb-4">{title}</h3>
       <ol className="flex flex-col gap-3">
         {steps.map((step, i) => (
           <li key={i} className="flex gap-3 items-start">
