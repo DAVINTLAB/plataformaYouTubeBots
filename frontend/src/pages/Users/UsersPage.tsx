@@ -141,15 +141,20 @@ export function UsersPage() {
                       ].join(" ")}
                     >
                       <td className="px-5 py-3.5 align-middle">
-                        <div
-                          className={`flex items-center gap-2.5 font-medium ${u.is_active ? "text-gray-800" : "text-gray-400"}`}
-                        >
+                        <div className="flex items-center gap-2.5">
                           <span
                             className={`w-[30px] h-[30px] rounded-full text-white text-[13px] font-bold inline-flex items-center justify-center flex-shrink-0 ${u.is_active ? "bg-davint-400" : "bg-gray-300"}`}
                           >
-                            {u.username[0].toUpperCase()}
+                            {u.name[0].toUpperCase()}
                           </span>
-                          {u.username}
+                          <div>
+                            <div
+                              className={`font-medium ${u.is_active ? "text-gray-800" : "text-gray-400"}`}
+                            >
+                              {u.name}
+                            </div>
+                            <div className="text-xs text-gray-400">@{u.username}</div>
+                          </div>
                         </div>
                       </td>
                       <td className="px-5 py-3.5 align-middle">

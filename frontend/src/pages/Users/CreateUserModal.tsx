@@ -8,6 +8,7 @@ interface Props {
 
 export function CreateUserModal({ onClose, onCreate }: Props) {
   const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,7 +18,7 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
     setError(null);
     setLoading(true);
     try {
-      await onCreate({ username, password });
+      await onCreate({ username, name, password });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar usuário");
@@ -49,6 +50,23 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
         <form onSubmit={handleSubmit} noValidate>
           <div className="px-6 pt-6">
             <div className="form-group">
+              <label className="form-label" htmlFor="new-name">
+                Nome
+              </label>
+              <input
+                id="new-name"
+                className="form-input"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                maxLength={128}
+                autoFocus
+                placeholder="Nome completo do pesquisador"
+              />
+            </div>
+
+            <div className="form-group">
               <label className="form-label" htmlFor="new-username">
                 Usuário
               </label>
@@ -61,8 +79,7 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
                 required
                 minLength={3}
                 maxLength={64}
-                autoFocus
-                placeholder="mínimo 3 caracteres"
+                placeholder="apenas minúsculas, dígitos, ponto ou _"
               />
             </div>
 
