@@ -7,6 +7,20 @@ on:
     branches: [main, dev]
 
 jobs:
+  guard-main:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bloquear PR para main que não venha de dev
+        run: |
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+            echo "::error::PRs para main devem vir da branch dev, não de '${{ github.head_ref }}'."
+            exit 1
+          fi
+
+      - name: Impedir deleção da branch dev após merge
+        run: echo "⚠️ Não delete a branch dev após o merge — ela é permanente."
+
   backend:
     runs-on: ubuntu-latest
     defaults:
