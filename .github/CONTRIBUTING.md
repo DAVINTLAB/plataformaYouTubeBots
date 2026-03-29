@@ -75,7 +75,19 @@ Formato: `tipo(escopo): descrição curta no imperativo`
 - Usar **merge commit** (não squash, não rebase) — preserva histórico de feature
 - Deletar a branch de feature após o merge
 
-### 5. Release
+### 5. PR de `dev` para `main`
+
+Antes de criar o PR, **sincronizar `dev` com `main`**:
+
+```bash
+git checkout dev
+git pull origin main
+git push origin dev
+```
+
+Isso evita conflitos e garante que `dev` contém tudo que já está em `main`.
+
+### 6. Release
 
 Quando `dev` estiver pronto para produção:
 

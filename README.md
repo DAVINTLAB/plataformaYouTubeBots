@@ -1,6 +1,6 @@
 # Plataforma de Análise de Comentários e Detecção de Bots no YouTube
 
-Sistema de coleta, limpeza, anotação e análise de comentários do YouTube para detecção de bots, desenvolvido no **DaVint Lab / PUCRS** como projeto de Iniciação Científica.
+Sistema de coleta, limpeza, anotação e análise de comentários do YouTube para detecção de bots, desenvolvido no **DaVint Lab / PUCRS** como projeto de Iniciação Científica financiado pelo **CNPq**.
 
 ## Visão geral
 
@@ -127,6 +127,10 @@ O CI executa automaticamente em todo push e PR:
 
 - **Backend:** Ruff · Bandit · pip-audit · Pytest (≥ 80% cobertura)
 - **Frontend:** ESLint · Prettier · tsc · npm audit
+
+## Financiamento
+
+Este projeto é financiado pelo **CNPq** (Conselho Nacional de Desenvolvimento Científico e Tecnológico) como bolsa de Iniciação Científica, vinculada ao **DaVint Lab / PUCRS**.
 
 ## Licença
 
