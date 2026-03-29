@@ -33,8 +33,16 @@ def _parse_youtube_error(exc: httpx.HTTPStatusError) -> HTTPException:
         body = exc.response.json()
         errors = body.get("error", {}).get("errors", [])
         reason = errors[0].get("reason", "") if errors else ""
+        message = errors[0].get("message", "") if errors else ""
     except Exception:
         reason = ""
+        message = ""
+    logger.warning(
+        "YouTube API %s reason=%s message=%s",
+        http_status,
+        reason,
+        message,
+    )
 
     if http_status == 400:
         if reason in ("keyInvalid", "keyExpired"):
@@ -69,8 +77,8 @@ def _parse_youtube_error(exc: httpx.HTTPStatusError) -> HTTPException:
     if http_status == 404:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail="Vídeo não encontrado.")
     return HTTPException(
-        status.HTTP_400_BAD_REQUEST,
-        detail="Erro na comunicação com o YouTube.",
+        status.HTTP_502_BAD_GATEWAY,
+        detail=f"Erro na API do YouTube (HTTP {http_status}). Tente novamente.",
     )
 
 
@@ -238,9 +246,11 @@ async def _enrich_channel_dates(
         db.commit()
         return True
     except Exception:
-        logger.warning(
-            "Falha ao buscar datas de criação de canais — coleta %s.",
+        logger.exception(
+            "Falha ao buscar datas de criação de canais para coleta %s "
+            "(%d canais solicitados)",
             collection_id,
+            len(channel_ids),
         )
         return False
 
@@ -320,17 +330,26 @@ async def start_collection(
         db.refresh(collection)
         return collection, next_page_token
     except httpx.HTTPStatusError as exc:
+        logger.exception(
+            "YouTube API erro HTTP %s para video_id=%s",
+            exc.response.status_code,
+            payload.video_id,
+        )
         collection.status = "failed"
-        collection.error_message = "Erro na comunicação com o YouTube."
+        collection.error_message = str(exc)[:500]
         db.commit()
         raise _parse_youtube_error(exc) from exc
     except Exception as exc:
+        logger.exception(
+            "Erro inesperado na coleta do video_id=%s",
+            payload.video_id,
+        )
         collection.status = "failed"
-        collection.error_message = "Erro inesperado durante a coleta."
+        collection.error_message = str(exc)[:500]
         db.commit()
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erro inesperado durante a coleta.",
+            detail=f"Erro interno ao coletar comentários: {type(exc).__name__}: {exc}",
         ) from exc
 
 
@@ -407,17 +426,26 @@ async def collect_next_page(
         db.refresh(collection)
         return collection, next_page_token
     except httpx.HTTPStatusError as exc:
+        logger.exception(
+            "YouTube API erro HTTP %s na next-page collection_id=%s",
+            exc.response.status_code,
+            payload.collection_id,
+        )
         collection.status = "failed"
-        collection.error_message = "Erro na comunicação com o YouTube."
+        collection.error_message = str(exc)[:500]
         db.commit()
         raise _parse_youtube_error(exc) from exc
     except Exception as exc:
+        logger.exception(
+            "Erro inesperado em next-page collection_id=%s",
+            payload.collection_id,
+        )
         collection.status = "failed"
-        collection.error_message = "Erro inesperado durante a coleta."
+        collection.error_message = str(exc)[:500]
         db.commit()
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erro inesperado durante a coleta.",
+            detail=f"Erro interno ao continuar coleta: {type(exc).__name__}: {exc}",
         ) from exc
 
 

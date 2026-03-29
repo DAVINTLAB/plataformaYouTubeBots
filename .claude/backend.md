@@ -121,6 +121,42 @@ result = youtube_client.fetch(api_key=payload.api_key.get_secret_value())
 - Nunca logar `SecretStr`, tokens JWT ou senhas
 - Bandit e Ruff devem passar sem warnings antes de qualquer commit
 
+## Tratamento de erros
+
+Toda HTTPException deve ter `detail` descritivo para o usuário final. Mensagens genéricas como "Erro inesperado" são proibidas — sempre incluir o contexto do que falhou.
+
+### Regras
+
+1. **detail descritivo**: toda HTTPException deve explicar **o que** falhou e **o que o usuário pode fazer**
+2. **Logar antes de lançar**: exceções inesperadas devem ser logadas com `logger.exception()` antes de virar HTTPException
+3. **Não engolir exceções**: `except Exception` sem log é proibido — no mínimo `logger.warning()` ou `logger.exception()`
+4. **Erros de APIs externas**: parsear a resposta e traduzir para mensagem amigável em português
+5. **Incluir contexto**: quando possível, incluir IDs e valores relevantes no log (nunca secrets)
+
+### Padrão
+
+```python
+# ✅ Correto — descritivo, com log
+try:
+    result = await external_api_call()
+except httpx.HTTPStatusError as exc:
+    logger.exception("Falha na API externa para video_id=%s", video_id)
+    raise HTTPException(
+        status.HTTP_502_BAD_GATEWAY,
+        detail="Falha ao comunicar com a API do YouTube. Tente novamente.",
+    ) from exc
+except Exception as exc:
+    logger.exception("Erro inesperado ao coletar video_id=%s", video_id)
+    raise HTTPException(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Erro interno ao processar a coleta. Tente novamente ou contate o administrador.",
+    ) from exc
+
+# ❌ Errado — genérico, sem log
+except Exception:
+    raise HTTPException(500, detail="Erro inesperado.")
+```
+
 ## Padrões de teste Pytest
 
 ```python
