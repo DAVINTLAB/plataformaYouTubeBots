@@ -9,8 +9,8 @@ export function useAuth() {
 
   const login = useCallback(
     async (username: string, password: string) => {
-      const { access_token } = await authApi.login(username, password);
-      setLogin(access_token);
+      const { access_token, refresh_token } = await authApi.login(username, password);
+      setLogin(access_token, refresh_token);
       navigate("/");
     },
     [setLogin, navigate]

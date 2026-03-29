@@ -1,6 +1,7 @@
-import { ReactNode, createContext, useCallback, useContext, useState } from "react";
+import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from "react";
 
 const TOKEN_KEY = "access_token";
+const REFRESH_KEY = "refresh_token";
 
 interface JWTPayload {
   sub: string;
@@ -19,7 +20,7 @@ interface AuthContextType {
   token: string | null;
   user: AuthUser | null;
   isAdmin: boolean;
-  login: (token: string) => void;
+  login: (accessToken: string, refreshToken: string) => void;
   logout: () => void;
 }
 
@@ -43,7 +44,11 @@ function readStoredSession(): { token: string; user: AuthUser } | null {
   }
   return {
     token,
-    user: { username: payload.sub, name: payload.name ?? payload.sub, role: payload.role },
+    user: {
+      username: payload.sub,
+      name: payload.name ?? payload.sub,
+      role: payload.role,
+    },
   };
 }
 
@@ -52,19 +57,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(stored?.token ?? null);
   const [user, setUser] = useState<AuthUser | null>(stored?.user ?? null);
 
-  const login = useCallback((newToken: string) => {
-    const payload = decodeJWT(newToken);
+  const login = useCallback((accessToken: string, refreshToken: string) => {
+    const payload = decodeJWT(accessToken);
     if (payload) {
-      sessionStorage.setItem(TOKEN_KEY, newToken);
-      setToken(newToken);
-      setUser({ username: payload.sub, name: payload.name ?? payload.sub, role: payload.role });
+      sessionStorage.setItem(TOKEN_KEY, accessToken);
+      localStorage.setItem(REFRESH_KEY, refreshToken);
+      setToken(accessToken);
+      setUser({
+        username: payload.sub,
+        name: payload.name ?? payload.sub,
+        role: payload.role,
+      });
     }
   }, []);
 
   const logout = useCallback(() => {
     sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
     setToken(null);
     setUser(null);
+  }, []);
+
+  // Escutar refresh transparente do http.ts
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const newToken = (e as CustomEvent<string>).detail;
+      const payload = decodeJWT(newToken);
+      if (payload) {
+        sessionStorage.setItem(TOKEN_KEY, newToken);
+        setToken(newToken);
+        setUser({
+          username: payload.sub,
+          name: payload.name ?? payload.sub,
+          role: payload.role,
+        });
+      }
+    };
+    window.addEventListener("token-refreshed", handler);
+    return () => window.removeEventListener("token-refreshed", handler);
   }, []);
 
   const isAdmin = user?.role === "admin";
