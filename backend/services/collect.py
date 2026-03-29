@@ -571,6 +571,16 @@ async def _enrich_channel_dates(
                 Comment.collection_id == collection_id,
                 Comment.author_channel_id == channel_id,
             ).update({"author_channel_published_at": published_at})
+        # Canais não retornados (deletados/privados): marcar com
+        # epoch para não buscar novamente (evita loop infinito)
+        not_found = set(channel_ids) - set(channel_dates.keys())
+        if not_found:
+            epoch = datetime(1970, 1, 1, tzinfo=UTC)
+            for cid in not_found:
+                db.query(Comment).filter(
+                    Comment.collection_id == collection_id,
+                    Comment.author_channel_id == cid,
+                ).update({"author_channel_published_at": epoch})
         db.commit()
         return True
     except Exception:
