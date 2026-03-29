@@ -17,24 +17,30 @@ function formatDuration(seconds: number): string {
   return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
 }
 
-function useElapsed(startIso: string | null, running: boolean): number {
+function useElapsed(running: boolean): number {
   const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!running || !startIso) {
+    if (!running) {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      startRef.current = null;
+      setElapsed(0);
       return;
     }
-    const iso = startIso.endsWith("Z") ? startIso : startIso + "Z";
-    const start = new Date(iso).getTime();
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    tick();
+    startRef.current = Date.now();
+    const tick = () => {
+      if (startRef.current) {
+        setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+      }
+    };
     intervalRef.current = setInterval(tick, 1000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [running, startIso]);
+  }, [running]);
 
   return elapsed;
 }
@@ -108,7 +114,7 @@ export function CollectPage() {
     active?.status === "completed" &&
     (enrichDone || active?.enrich_status === "done" || active?.enrich_status === null);
 
-  const elapsed = useElapsed(active?.created_at ?? null, isActivelyPolling);
+  const elapsed = useElapsed(isActivelyPolling);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -452,11 +458,13 @@ export function CollectPage() {
                     />
                   </svg>
                   <div>
-                    <p className="text-sm font-medium text-gray-700">Coletando comentários…</p>
+                    <p className="text-sm font-medium text-gray-700">
+                      Coletando comentários (100 por página)…
+                    </p>
                     {active.total_comments != null && active.total_comments > 0 && (
                       <p className="text-xs text-gray-400 mt-0.5">
                         {active.total_comments.toLocaleString("pt-BR")} coletados até agora
-                        {elapsed > 0 && ` · ${formatDuration(elapsed)}`}
+                        {isActivelyPolling && ` · ${formatDuration(elapsed)}`}
                       </p>
                     )}
                   </div>
@@ -545,10 +553,8 @@ export function CollectPage() {
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-gray-600">
                   <span className="font-semibold text-gray-800">{active.total_comments ?? 0}</span>{" "}
-                  comentários coletados. Buscando dados complementares...
-                  {elapsed > 0 && (
-                    <span className="text-xs text-gray-400 ml-2">{formatDuration(elapsed)}</span>
-                  )}
+                  comentários coletados. Enriquecendo dados...
+                  <span className="text-xs text-gray-400 ml-2">{formatDuration(elapsed)}</span>
                 </p>
                 <div className="flex items-center gap-3">
                   <svg
@@ -574,17 +580,18 @@ export function CollectPage() {
                   <div>
                     <p className="text-sm font-medium text-gray-700">
                       {enrichPhase === "video"
-                        ? "Obtendo metadados do vídeo..."
+                        ? "Etapa 1/3 — Obtendo título, canal e estatísticas do vídeo..."
                         : enrichPhase === "replies"
-                          ? "Buscando respostas restantes..."
-                          : "Obtendo datas de criação dos canais..."}
+                          ? "Etapa 2/3 — Coletando respostas (replies) dos comentários..."
+                          : "Etapa 3/3 — Obtendo data de criação da conta de cada autor..."}
                     </p>
-                    {enrichRemaining > 0 && enrichPhase !== "video" && (
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {enrichRemaining} {enrichPhase === "replies" ? "threads" : "autores"}{" "}
-                        restantes
-                      </p>
-                    )}
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {enrichPhase === "video"
+                        ? "Uma única chamada à API do YouTube."
+                        : enrichPhase === "replies"
+                          ? `${enrichRemaining} comentários com respostas extras a coletar. Cada lote busca até 20 threads.`
+                          : `${enrichRemaining} autores sem data de criação. Cada lote consulta até 200 canais.`}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2 p-3 bg-davint-50 rounded-lg">
