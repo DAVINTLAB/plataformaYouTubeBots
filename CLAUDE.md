@@ -9,11 +9,11 @@ Sistema de detecção de bots em comentários do YouTube para pesquisa científi
 - **Frontend:** React 18 · TypeScript · Vite · Plotly.js · Tailwind CSS v3
 - **Frontend — qualidade e segurança:** ESLint · Prettier · npm audit (auditoria de dependências)
 - **Dependências (ambos):** Dependabot ativo no GitHub — PRs automáticos para atualizações de segurança
-- **Auth:** JWT + bcrypt (python-jose + passlib)
+- **Auth:** JWT + bcrypt (python-jose + passlib) — access token (60min) + refresh token (7 dias)
 - **Banco:** Neon (PostgreSQL serverless) — free tier, 0.5 GB, scale-to-zero
 - **Deploy:** Vercel — dois projetos separados
   - Frontend: projeto Vercel padrão (Vite + React), domínio próprio
-  - Backend: projeto Vercel separado com `@vercel/python`, domínio próprio, timeout 10s no free tier
+  - Backend: projeto Vercel separado com `@vercel/python`, domínio próprio, Vercel Pro (maxDuration 60s)
   - Frontend consome backend via variável de ambiente `VITE_API_URL`
 
 ## Arquitetura
@@ -205,7 +205,13 @@ Arquivo `.github/dependabot.yml` configurado para:
 - Rótulo `bot` na anotação exige campo `justificativa` preenchido — validado no backend (HTTP 422) e bloqueado no frontend
 - Datasets nomeados como `{idVideo}_{critérios}` — ex: `abc123_media`, `abc123_percentil_intervalo`
 - Apenas datasets selecionados (suspeitos) são persistidos — excluídos não são armazenados
-- Timeout de 10s por request no Vercel free tier — operações longas (coleta, limpeza) devem ser assíncronas ou paginadas
+- Vercel Pro com `maxDuration: 60` no `vercel.json` — timeout httpx de 15s
+- Coletas são compartilhadas — todos os usuários veem todas as coletas (sem filtro por `collected_by`)
+- Enriquecimento pós-coleta separado em endpoint `POST /collect/{id}/enrich` com 3 fases (video, replies, channels)
+- Bulk insert com `ON CONFLICT DO NOTHING` — nunca SELECT+INSERT um a um
+- Canais não retornados pela YouTube API recebem epoch (1970-01-01) para evitar loop infinito
+- Refresh token (7 dias) no `localStorage`, access token (60min) no `sessionStorage` — interceptor transparente no `http.ts`
+- API keys pessoais e intransferíveis — avisos obrigatórios em CollectPage, UsersPage e CreateUserModal
 - **Cards de instrução obrigatórios em páginas de US**: toda página de US deve orientar o usuário em cada etapa do fluxo — use `<StepsCard>` no estado inicial, notice `bg-davint-50` durante processamento ativo, banner `bg-yellow-50` para estados interrompidos, CTA claro ao concluir. Ver `.claude/frontend.md` § "Cards de instrução por etapa"
 
 ## Regras de negócio críticas
