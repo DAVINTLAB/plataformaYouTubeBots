@@ -259,6 +259,39 @@ export function CollectPage() {
                 },
               ]}
             />
+            <div className="flex items-start gap-2.5 p-4 bg-yellow-50 border border-yellow-200 rounded-xl mb-6">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <div className="text-sm text-yellow-700">
+                <p className="font-semibold">
+                  Você precisa de uma API key pessoal e intransferível
+                </p>
+                <p className="mt-1 text-xs">
+                  Crie sua chave em{" "}
+                  <a
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline font-medium"
+                  >
+                    Google Cloud Console
+                  </a>{" "}
+                  com a <strong>YouTube Data API v3</strong> habilitada. Cada pesquisador deve ter
+                  sua própria chave — não compartilhe entre colegas. A chave não é armazenada pela
+                  plataforma.
+                </p>
+              </div>
+            </div>
             <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
               <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                 <div className="form-group">
