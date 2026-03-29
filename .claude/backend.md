@@ -159,12 +159,108 @@ except Exception:
 
 ## Padrões de teste Pytest
 
+### Regra de cobertura
+
+- **Mínimo 80% de cobertura de linhas** — enforçado pelo CI (`--cov-fail-under=80`)
+- Cobertura deve vir de **testes úteis** que validem lógica de negócio, não de testes triviais escritos apenas para subir percentual
+- Se um teste não valida nenhum comportamento de negócio, ele não deve existir
+
+### Técnicas obrigatórias
+
+#### Testes unitários
+
+| Técnica | Quando usar | Exemplo |
+|---|---|---|
+| **Partição de equivalência** | Inputs com comportamento distinto | `video_id` válido vs URL completa vs URL curta vs string vazia |
+| **Valor limite** | Limites numéricos e de string | `reply_count = 0`, `reply_count = 5` (inline), `reply_count = 6` (extra fetch) |
+| **Teste estrutural** | Cobrir branches de `if/else`, `try/except` | YouTube API retorna 400 vs 403 vs 404 vs 429 |
+| **Teste de propriedades** | Invariantes que devem sempre valer | `comment_id` nunca duplica na mesma coleta (idempotência) |
+| **Teste de contrato** | Garantir formato de resposta da API | Response contém `collection_id`, `status`, `total_comments` |
+| **Teste de regressão** | Bug corrigido não volta | Erro 403 forbidden não retorna mais "vídeo privado" |
+| **Teste de estado** | Transições de estado válidas | Collection: `running` → `completed` → enrich `pending` → `done` |
+| **Teste de idempotência** | Operação repetida não duplica dados | Recoleta do mesmo vídeo não duplica comentários |
+
+#### Testes de integração
+
+| Técnica | Quando usar | Exemplo |
+|---|---|---|
+| **Fluxo entre endpoints** | Validar pipeline completo | `POST /collect` → `POST /collect/next-page` → `GET /collect/{id}/export` |
+| **Integração com banco** | Persistência e consultas complexas | Import JSON → verificar dados no banco → exportar e comparar |
+| **Tratamento de erros entre camadas** | Erros propagam corretamente | YouTube API falha → service marca `failed` → router retorna HTTP correto |
+| **Concorrência e compartilhamento** | Dados compartilhados entre usuários | User A coleta → User B lista e vê a coleta de A |
+| **Cascata de deleção** | Delete remove dados relacionados | Deletar coleta remove todos os comentários associados |
+
+### Estrutura por endpoint
+
+Todo endpoint deve ter no mínimo:
+
 ```python
-# todo endpoint deve cobrir:
-def test_happy_path(client, auth_headers): ...
-def test_sem_token_retorna_401(client): ...
-def test_papel_insuficiente_retorna_403(client, auth_headers): ...
-def test_payload_invalido_retorna_422(client, auth_headers): ...
+# 1. Contrato — happy path retorna formato esperado
+def test_coleta_retorna_collection_id_e_status(client, auth_as_user, stub): ...
+
+# 2. Autenticação — sem token retorna 401
+def test_coleta_sem_token_retorna_401(client): ...
+
+# 3. Validação — payload inválido retorna 422
+def test_coleta_payload_invalido_retorna_422(client, auth_as_user): ...
+
+# 4. Regras de negócio — lógica específica da funcionalidade
+def test_recoleta_nao_duplica_comentarios(client, db, auth_as_user, stub): ...
+
+# 5. Erros externos — APIs externas retornam erros traduzidos
+def test_youtube_403_retorna_mensagem_amigavel(client, auth_as_user, stub): ...
+
+# 6. Segurança — dados sensíveis nunca vazam
+def test_api_key_nao_aparece_na_resposta(client, auth_as_user, stub): ...
+```
+
+### Testes de integração
+
+Fluxos que cruzam múltiplas camadas e endpoints devem ser testados de ponta a ponta:
+
+```python
+def test_fluxo_completo_coleta_export(client, db, auth_as_user, stub):
+    """Integração: coleta → status → export JSON → verificar formato."""
+    # 1. Iniciar coleta
+    resp = client.post("/collect", json={...})
+    assert resp.status_code == 202
+    collection_id = resp.json()["collection_id"]
+
+    # 2. Verificar status
+    status = client.get(f"/collect/status?collection_id={collection_id}")
+    assert status.json()["status"] == "completed"
+
+    # 3. Exportar e verificar formato
+    export = client.get(f"/collect/{collection_id}/export?format=json")
+    data = export.json()
+    assert "video" in data
+    assert "comments" in data
+    assert len(data["comments"]) > 0
+```
+
+### Dublês de teste
+
+| Dublê | Quando usar |
+|---|---|
+| **Stub** | Simular respostas de APIs externas (YouTube API) |
+| **Mock** | Verificar que algo NÃO aconteceu (API key não aparece em logs) |
+| **Spy** | Observar chamadas sem substituir comportamento |
+| **Fake** | PostgreSQL via Docker (nunca SQLite) |
+
+### O que NÃO fazer
+
+```python
+# ❌ Teste que só sobe cobertura sem validar nada útil
+def test_safe_int():
+    assert _safe_int("42") == 42  # trivial, sem valor de negócio
+
+# ❌ Teste que repete o que o framework já garante
+def test_endpoint_existe():
+    assert hasattr(router, "post")
+
+# ❌ Teste que testa a implementação em vez do comportamento
+def test_usa_bcrypt():
+    assert "bcrypt" in str(get_password_hash("x"))
 ```
 
 ## Soft-delete

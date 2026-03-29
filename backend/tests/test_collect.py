@@ -455,3 +455,18 @@ def test_payload_invalido_retorna_422(client, auth_as_user):
     """Afirma 422 para payload sem campo obrigatório api_key."""
     response = client.post("/collect", json={"video_id": "dQw4w9WgXcQ"})
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Testes de utilitários
+# ---------------------------------------------------------------------------
+
+
+def test_safe_int_converte_string_numerica():
+    from services.collect import _safe_int
+
+    assert _safe_int("42") == 42
+    assert _safe_int("0") == 0
+    assert _safe_int(None) is None
+    assert _safe_int("abc") is None
+    assert _safe_int("") is None

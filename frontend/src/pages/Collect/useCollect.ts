@@ -17,7 +17,7 @@ interface CollectState {
   collections: CollectionSummary[];
   isActivelyPolling: boolean;
   // Enrich progress
-  enrichPhase: "replies" | "channels" | null;
+  enrichPhase: "video" | "replies" | "channels" | null;
   enrichRemaining: number;
   enrichDone: boolean;
 }
@@ -409,6 +409,7 @@ export function useCollect() {
               total_comments: status.total_comments,
               channel_dates_failed: status.channel_dates_failed ?? null,
               enrich_status: status.enrich_status ?? null,
+              duration_seconds: status.duration_seconds ?? null,
               next_page_token: null,
               created_at: status.collected_at ?? new Date().toISOString(),
             },

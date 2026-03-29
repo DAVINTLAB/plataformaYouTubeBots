@@ -42,6 +42,7 @@ def _to_started(collection, next_page_token: str | None) -> CollectionStarted:
         total_comments=collection.total_comments,
         next_page_token=next_page_token,
         enrich_status=collection.enrich_status,
+        duration_seconds=collection.duration_seconds,
         created_at=collection.created_at,
     )
 
@@ -55,6 +56,7 @@ def _to_status(collection, username: str) -> CollectionStatus:
         total_comments=collection.total_comments,
         channel_dates_failed=collection.channel_dates_failed,
         enrich_status=collection.enrich_status,
+        duration_seconds=collection.duration_seconds,
         collected_at=collection.completed_at,
         collected_by=username,
     )
@@ -69,6 +71,7 @@ def _to_summary(collection) -> CollectionSummary:
         total_comments=collection.total_comments,
         channel_dates_failed=collection.channel_dates_failed,
         enrich_status=collection.enrich_status,
+        duration_seconds=collection.duration_seconds,
         collected_at=collection.completed_at,
     )
 

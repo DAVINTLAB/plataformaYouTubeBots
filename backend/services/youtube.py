@@ -23,7 +23,7 @@ async def fetch_comments_page(
         response = await client.get(
             "https://www.googleapis.com/youtube/v3/commentThreads",
             params=params,
-            timeout=8.0,
+            timeout=5.0,
         )
         response.raise_for_status()
         return response.json()
@@ -35,7 +35,7 @@ async def fetch_video_info(video_id: str, api_key: str) -> dict | None:
         response = await client.get(
             "https://www.googleapis.com/youtube/v3/videos",
             params={"part": "snippet,statistics", "id": video_id, "key": api_key},
-            timeout=8.0,
+            timeout=5.0,
         )
         response.raise_for_status()
         items = response.json().get("items", [])
@@ -62,7 +62,7 @@ async def fetch_replies_page(
         response = await client.get(
             "https://www.googleapis.com/youtube/v3/comments",
             params=params,
-            timeout=8.0,
+            timeout=5.0,
         )
         response.raise_for_status()
         return response.json()
@@ -82,7 +82,7 @@ async def fetch_channels_info(
             response = await client.get(
                 "https://www.googleapis.com/youtube/v3/channels",
                 params={"part": "snippet", "id": ",".join(batch), "key": api_key},
-                timeout=8.0,
+                timeout=5.0,
             )
             response.raise_for_status()
             for item in response.json().get("items", []):

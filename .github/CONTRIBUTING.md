@@ -48,9 +48,27 @@ Formato: `tipo(escopo): descrição curta no imperativo`
 ### 3. Abrir PR para `dev`
 
 - Título: mesmo formato do commit (`feat(us-02): ...`)
-- Descrição: o que mudou, como testar, screenshots se frontend
 - CI deve estar verde antes do merge
 - Ao menos 1 aprovação do time
+
+**Formato do corpo do PR:**
+
+```markdown
+## Resumo
+
+- Descrição concisa das mudanças (bullets)
+
+## Como testar
+
+- [ ] Passo a passo para validar as mudanças
+- [ ] Cenários de erro ou edge cases relevantes
+
+## Screenshots
+
+(se houver mudanças visuais no frontend)
+```
+
+> Escrever em português. Termos técnicos (endpoint, branch, merge) podem ficar em inglês.
 
 ### 4. Merge
 

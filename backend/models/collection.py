@@ -32,6 +32,9 @@ class Collection(Base):
     # None = não tentou (import), False = sucesso, True = falha em alguma página
     channel_dates_failed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # Duração total da coleta + enriquecimento em segundos
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Enriquecimento pós-coleta (replies extras + channel dates)
     # None = não aplicável (import/legado), pending, enriching, done
     enrich_status: Mapped[str | None] = mapped_column(String(16), nullable=True)

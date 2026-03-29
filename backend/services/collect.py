@@ -173,6 +173,23 @@ def _insert_comments(db: Session, collection_id: uuid.UUID, items: list[dict]) -
     return inserted
 
 
+def _populate_video_metadata(collection: Collection, video_info: dict) -> None:
+    """Preenche os campos de metadados do vídeo na Collection."""
+    vs = video_info.get("snippet", {})
+    st = video_info.get("statistics", {})
+    pub = vs.get("publishedAt")
+    collection.video_title = vs.get("title")
+    collection.video_description = vs.get("description")
+    collection.video_channel_id = vs.get("channelId")
+    collection.video_channel_title = vs.get("channelTitle")
+    collection.video_published_at = (
+        datetime.fromisoformat(pub.replace("Z", "+00:00")) if pub else None
+    )
+    collection.video_view_count = _safe_int(st.get("viewCount"))
+    collection.video_like_count = _safe_int(st.get("likeCount"))
+    collection.video_comment_count = _safe_int(st.get("commentCount"))
+
+
 # ─── Coleta de páginas (leve — só comentários) ───────────────────────────────
 
 
@@ -192,25 +209,6 @@ async def start_collection(
 
     try:
         api_key = payload.api_key.get_secret_value()
-
-        # Metadados do vídeo (videos.list — 1 quota unit)
-        video_info = await fetch_video_info(payload.video_id, api_key)
-        if video_info:
-            vs = video_info.get("snippet", {})
-            st = video_info.get("statistics", {})
-            pub = vs.get("publishedAt")
-            collection.video_title = vs.get("title")
-            collection.video_description = vs.get("description")
-            collection.video_channel_id = vs.get("channelId")
-            collection.video_channel_title = vs.get("channelTitle")
-            collection.video_published_at = (
-                datetime.fromisoformat(pub.replace("Z", "+00:00")) if pub else None
-            )
-            collection.video_view_count = _safe_int(st.get("viewCount"))
-            collection.video_like_count = _safe_int(st.get("likeCount"))
-            collection.video_comment_count = _safe_int(st.get("commentCount"))
-            db.commit()
-            db.refresh(collection)
 
         data = await fetch_comments_page(payload.video_id, api_key, max_results=100)
         items = data.get("items", [])
@@ -438,6 +436,19 @@ async def enrich_collection(
     t0 = time.monotonic()
 
     try:
+        # ── Fase 0: metadados do vídeo ──
+        if collection.video_title is None:
+            video_info = await fetch_video_info(collection.video_id, api_key)
+            if video_info:
+                _populate_video_metadata(collection, video_info)
+                db.commit()
+            return {
+                "phase": "video",
+                "processed": 1 if video_info else 0,
+                "remaining": 0,
+                "done": False,
+            }
+
         # ── Fase 1: replies extras ──
         threads = _threads_needing_replies(db, collection_id, limit=5)
         if threads:
@@ -486,6 +497,9 @@ async def enrich_collection(
         collection.enrich_status = "done"
         if collection.channel_dates_failed is None:
             collection.channel_dates_failed = False
+        if collection.created_at:
+            delta = datetime.now(UTC) - collection.created_at.replace(tzinfo=UTC)
+            collection.duration_seconds = int(delta.total_seconds())
         db.commit()
         return {
             "phase": "channels",

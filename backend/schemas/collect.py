@@ -74,7 +74,7 @@ class EnrichRequest(BaseModel):
 
 
 class EnrichResponse(BaseModel):
-    phase: Literal["replies", "channels"]
+    phase: Literal["video", "replies", "channels"]
     processed: int
     remaining: int
     done: bool
@@ -91,6 +91,7 @@ class CollectionStarted(BaseModel):
     next_page_token: str | None = None
     channel_dates_failed: bool | None = None
     enrich_status: str | None = None
+    duration_seconds: int | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -104,6 +105,7 @@ class CollectionStatus(BaseModel):
     total_comments: int | None = None
     channel_dates_failed: bool | None = None
     enrich_status: str | None = None
+    duration_seconds: int | None = None
     collected_at: datetime | None = None
     collected_by: str | None = None
 
@@ -118,6 +120,7 @@ class CollectionSummary(BaseModel):
     total_comments: int | None = None
     channel_dates_failed: bool | None = None
     enrich_status: str | None = None
+    duration_seconds: int | None = None
     collected_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
