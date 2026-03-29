@@ -100,6 +100,39 @@ export function CreateUserModal({ onClose, onCreate }: Props) {
             </div>
 
             {error && <div className="alert alert-error mt-4">{error}</div>}
+
+            <div className="flex items-start gap-2.5 p-3 bg-yellow-50 border border-yellow-200 rounded-lg mt-4">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <div className="text-xs text-yellow-700">
+                <p className="font-semibold mb-1">
+                  Cada anotador precisa de sua própria API key do YouTube
+                </p>
+                <p>
+                  Instrua o pesquisador a criar uma chave em{" "}
+                  <a
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline font-medium"
+                  >
+                    Google Cloud Console
+                  </a>{" "}
+                  com a YouTube Data API v3 habilitada. A chave é pessoal e intransferível — não
+                  deve ser compartilhada entre pesquisadores.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2.5 px-6 py-5 border-t border-gray-200 mt-6">

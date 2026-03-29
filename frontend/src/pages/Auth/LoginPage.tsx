@@ -22,7 +22,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-davint-50 via-white to-davint-50 p-6">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-davint-50 via-white to-davint-50 p-6">
       <div className="bg-white rounded-xl shadow-xl px-9 py-10 w-full max-w-[420px]">
         <div className="flex flex-col items-center text-center mb-8 gap-2.5">
           <img src="/davint-logo.png" alt="DaVint Lab" className="h-12 w-auto mb-1" />
