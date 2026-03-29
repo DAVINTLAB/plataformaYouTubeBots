@@ -23,7 +23,7 @@ no banco e disponibilizá-los para limpeza (US-03). A API key é fornecida por r
 ## Contrato de API
 
 ### `POST /collect`
-Inicia a coleta de comentários de um vídeo.
+Inicia a coleta de comentários de um vídeo (só comentários, sem enrich).
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -31,28 +31,66 @@ Inicia a coleta de comentários de um vídeo.
 ```json
 {
   "video_id": "dQw4w9WgXcQ",
-  "api_key": "AIza...",
-  "max_results": 500
+  "api_key": "AIza..."
 }
 ```
 
 > `video_id`: aceita tanto o ID puro (`dQw4w9WgXcQ`) quanto a URL completa do YouTube.
-> `max_results`: opcional, padrão 500, máximo 2000.
 
 **Response 202:**
 ```json
 {
   "collection_id": "uuid",
   "video_id": "dQw4w9WgXcQ",
-  "status": "pending",
+  "status": "running",
+  "total_comments": 100,
+  "next_page_token": "...",
+  "channel_dates_failed": null,
+  "enrich_status": null,
+  "duration_seconds": null,
   "created_at": "2024-01-01T00:00:00Z"
 }
 ```
 
 ---
 
+### `POST /collect/next-page`
+Continua a paginação (frontend-driven polling a cada 2s).
+
+**Request:**
+```json
+{
+  "collection_id": "uuid",
+  "api_key": "AIza..."
+}
+```
+
+---
+
+### `POST /collect/{collection_id}/enrich`
+Enriquece uma coleta concluída em 3 fases (video → replies → channels).
+
+**Request:**
+```json
+{
+  "api_key": "AIza..."
+}
+```
+
+**Response 200:**
+```json
+{
+  "phase": "video" | "replies" | "channels",
+  "processed": 100,
+  "remaining": 50,
+  "done": false
+}
+```
+
+---
+
 ### `GET /collect/status`
-Consulta o status de uma coleta em andamento ou concluída.
+Consulta o status de uma coleta.
 
 **Query params:** `collection_id=uuid`
 
@@ -61,19 +99,24 @@ Consulta o status de uma coleta em andamento ou concluída.
 {
   "collection_id": "uuid",
   "video_id": "dQw4w9WgXcQ",
+  "video_title": "Never Gonna Give You Up",
   "status": "completed",
   "total_comments": 487,
+  "channel_dates_failed": false,
+  "enrich_status": "done",
+  "duration_seconds": 120,
   "collected_at": "2024-01-01T00:01:30Z",
   "collected_by": "username"
 }
 ```
 
 > `status`: `pending` | `running` | `completed` | `failed`
+> `enrich_status`: `null` | `pending` | `enriching` | `done`
 
 ---
 
 ### `GET /collect`
-Lista coletas realizadas pelo usuário autenticado.
+Lista todas as coletas (compartilhadas entre todos os usuários).
 
 **Response 200:**
 ```json
@@ -81,8 +124,12 @@ Lista coletas realizadas pelo usuário autenticado.
   {
     "collection_id": "uuid",
     "video_id": "string",
+    "video_title": "string",
     "status": "completed",
     "total_comments": 487,
+    "channel_dates_failed": false,
+    "enrich_status": "done",
+    "duration_seconds": 120,
     "collected_at": "2024-01-01T00:01:30Z"
   }
 ]
@@ -161,49 +208,37 @@ class CollectionOut(BaseModel):
 
 ---
 
-## Service — estratégia de coleta (MVP)
+## Service — estratégia de coleta
 
-Devido ao timeout de 10s no Vercel, usar **coleta paginada por demanda**:
+Vercel Pro com `maxDuration: 60`. Coleta paginada + enrich separado:
 
 ```python
 # services/youtube.py
-import httpx
+_TIMEOUT = 15.0  # margem confortável dentro de 60s
 
-async def fetch_comments_page(
-    video_id: str,
-    api_key: str,  # valor extraído do SecretStr — nunca logar esta variável
-    page_token: str | None = None,
-) -> dict:
+async def fetch_comments_page(...) -> dict:
     params = {
-        "part": "snippet",
+        "part": "snippet,replies",  # replies inline (até 5 por thread)
         "videoId": video_id,
         "key": api_key,
         "maxResults": 100,
         "textFormat": "plainText",
     }
-    if page_token:
-        params["pageToken"] = page_token
+    ...
+    timeout=_TIMEOUT
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://www.googleapis.com/youtube/v3/commentThreads",
-            params=params,
-            timeout=8.0,  # margem para o timeout do Vercel
-        )
-        response.raise_for_status()
-        return response.json()
-
-# IMPORTANTE: nunca passar api_key para logger, nunca incluir em mensagens de erro
-# Exemplo do que NÃO fazer:
-#   logger.info(f"Coletando com key={api_key}")  ← ERRADO
-#   raise Exception(f"Falha com key {api_key}")  ← ERRADO
+# IMPORTANTE: nunca passar api_key para logger ou mensagens de erro
 ```
 
-**Estratégia de paginação sob demanda:**
-1. `POST /collect` inicia e coleta apenas a 1ª página (≤ 100 comentários) de forma síncrona
-2. Retorna `collection_id` + `next_page_token` se houver mais páginas
-3. Frontend chama `POST /collect/next-page` repetidamente até `next_page_token` ser nulo
-4. Cada chamada retorna progresso acumulado
+**Fluxo de coleta (3 etapas):**
+1. `POST /collect` inicia e coleta a 1ª página (≤ 100 comments) com bulk insert
+2. Frontend chama `POST /collect/next-page` em polling até `next_page_token` ser nulo
+3. Quando `status=completed`, frontend chama `POST /collect/{id}/enrich` em loop:
+   - Fase 1/3: `videos.list` (metadados do vídeo)
+   - Fase 2/3: `comments.list` (replies extras >5 por thread, 20 por batch)
+   - Fase 3/3: `channels.list` (data de criação do canal, 200 por batch)
+
+**Inserção:** bulk insert com `INSERT ... ON CONFLICT DO NOTHING` (1 query para N rows)
 
 ```python
 # models/collection.py — adicionar coluna
