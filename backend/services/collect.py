@@ -19,8 +19,8 @@ from services.youtube import (
 
 logger = logging.getLogger(__name__)
 
-# Limite de tempo para o enrich não estourar os 10s do Vercel
-_ENRICH_WALL_CLOCK_LIMIT = 7.0
+# Limite de tempo para o enrich não estourar os 60s do Vercel Pro
+_ENRICH_WALL_CLOCK_LIMIT = 45.0
 
 
 def _safe_int(s: str | None) -> int | None:
@@ -100,77 +100,74 @@ def _parse_youtube_error(exc: httpx.HTTPStatusError) -> HTTPException:
 # ─── Inserção de comentários ─────────────────────────────────────────────────
 
 
-def _insert_single_comment(
-    db: Session,
+def _comment_row(
     collection_id: uuid.UUID,
     comment_id: str,
     snippet: dict,
     *,
     parent_id: str | None = None,
     total_reply_count: int = 0,
-) -> bool:
-    """Insere um comentário se não existir. Retorna True se inseriu."""
-    exists = (
-        db.query(Comment.id)
-        .filter(
-            Comment.collection_id == collection_id,
-            Comment.comment_id == comment_id,
-        )
-        .first()
-    )
-    if exists:
-        return False
-
-    comment = Comment(
-        collection_id=collection_id,
-        comment_id=comment_id,
-        parent_id=parent_id,
-        author_display_name=snippet.get("authorDisplayName", ""),
-        author_channel_id=(snippet.get("authorChannelId") or {}).get("value"),
-        text_original=snippet.get("textOriginal", snippet.get("textDisplay", "")),
-        text_display=snippet.get("textDisplay"),
-        author_profile_image_url=snippet.get("authorProfileImageUrl"),
-        author_channel_url=snippet.get("authorChannelUrl"),
-        like_count=int(snippet.get("likeCount", 0)),
-        reply_count=total_reply_count,
-        published_at=datetime.fromisoformat(
+) -> dict:
+    """Monta dict para bulk insert."""
+    return {
+        "id": uuid.uuid4(),
+        "collection_id": collection_id,
+        "comment_id": comment_id,
+        "parent_id": parent_id,
+        "author_display_name": snippet.get("authorDisplayName", ""),
+        "author_channel_id": (snippet.get("authorChannelId") or {}).get("value"),
+        "text_original": snippet.get("textOriginal", snippet.get("textDisplay", "")),
+        "text_display": snippet.get("textDisplay"),
+        "author_profile_image_url": snippet.get("authorProfileImageUrl"),
+        "author_channel_url": snippet.get("authorChannelUrl"),
+        "like_count": int(snippet.get("likeCount", 0)),
+        "reply_count": total_reply_count,
+        "published_at": datetime.fromisoformat(
             snippet["publishedAt"].replace("Z", "+00:00")
         ),
-        updated_at=datetime.fromisoformat(snippet["updatedAt"].replace("Z", "+00:00")),
-    )
-    db.add(comment)
-    return True
+        "updated_at": datetime.fromisoformat(
+            snippet["updatedAt"].replace("Z", "+00:00")
+        ),
+    }
+
+
+def _bulk_insert(db: Session, rows: list[dict]) -> int:
+    """INSERT ... ON CONFLICT DO NOTHING — 1 query para N rows."""
+    if not rows:
+        return 0
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    stmt = pg_insert(Comment).values(rows)
+    stmt = stmt.on_conflict_do_nothing(constraint="uq_collection_comment")
+    result = db.execute(stmt)
+    db.commit()
+    return result.rowcount  # type: ignore[return-value]
 
 
 def _insert_comments(db: Session, collection_id: uuid.UUID, items: list[dict]) -> int:
-    """Insere top-level comments + inline replies (até 5 por thread)."""
-    inserted = 0
+    """Bulk insert de top-level comments + inline replies."""
+    rows: list[dict] = []
     for item in items:
         top = item["snippet"]["topLevelComment"]
         thread = item["snippet"]
-
-        if _insert_single_comment(
-            db,
-            collection_id,
-            top["id"],
-            top["snippet"],
-            total_reply_count=int(thread.get("totalReplyCount", 0)),
-        ):
-            inserted += 1
-
-        # Inline replies (part=snippet,replies retorna até 5 por thread)
-        for reply in item.get("replies", {}).get("comments", []):
-            if _insert_single_comment(
-                db,
+        rows.append(
+            _comment_row(
                 collection_id,
-                reply["id"],
-                reply["snippet"],
-                parent_id=top["id"],
-            ):
-                inserted += 1
-
-    db.commit()
-    return inserted
+                top["id"],
+                top["snippet"],
+                total_reply_count=int(thread.get("totalReplyCount", 0)),
+            )
+        )
+        for reply in item.get("replies", {}).get("comments", []):
+            rows.append(
+                _comment_row(
+                    collection_id,
+                    reply["id"],
+                    reply["snippet"],
+                    parent_id=top["id"],
+                )
+            )
+    return _bulk_insert(db, rows)
 
 
 def _populate_video_metadata(collection: Collection, video_info: dict) -> None:
@@ -450,7 +447,7 @@ async def enrich_collection(
             }
 
         # ── Fase 1: replies extras ──
-        threads = _threads_needing_replies(db, collection_id, limit=5)
+        threads = _threads_needing_replies(db, collection_id, limit=20)
         if threads:
             processed = 0
             for comment_id, _expected in threads:
@@ -476,7 +473,7 @@ async def enrich_collection(
             }
 
         # ── Fase 2: channel dates ──
-        channel_ids = _channels_needing_dates(db, collection_id, limit=100)
+        channel_ids = _channels_needing_dates(db, collection_id, limit=200)
         if channel_ids:
             success = await _enrich_channel_dates(
                 db, collection_id, channel_ids, api_key
@@ -539,16 +536,16 @@ async def _fetch_thread_replies(
     page_token: str | None = None
     while True:
         data = await fetch_replies_page(parent_comment_id, api_key, page_token)
-        for reply in data.get("items", []):
-            if _insert_single_comment(
-                db,
+        rows = [
+            _comment_row(
                 collection_id,
                 reply["id"],
                 reply["snippet"],
                 parent_id=parent_comment_id,
-            ):
-                inserted += 1
-        db.commit()
+            )
+            for reply in data.get("items", [])
+        ]
+        inserted += _bulk_insert(db, rows)
         page_token = data.get("nextPageToken")
         if not page_token:
             break
