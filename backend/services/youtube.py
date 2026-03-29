@@ -2,6 +2,9 @@ from datetime import datetime
 
 import httpx
 
+# Timeout confortável para Vercel Pro (60s por request)
+_TIMEOUT = 15.0
+
 
 async def fetch_comments_page(
     video_id: str,
@@ -10,7 +13,7 @@ async def fetch_comments_page(
     page_token: str | None = None,
 ) -> dict:
     params: dict = {
-        "part": "snippet",
+        "part": "snippet,replies",
         "videoId": video_id,
         "key": api_key,
         "maxResults": min(max_results, 100),
@@ -23,19 +26,23 @@ async def fetch_comments_page(
         response = await client.get(
             "https://www.googleapis.com/youtube/v3/commentThreads",
             params=params,
-            timeout=4.0,
+            timeout=_TIMEOUT,
         )
         response.raise_for_status()
         return response.json()
 
 
 async def fetch_video_info(video_id: str, api_key: str) -> dict | None:
-    """Retorna o objeto de vídeo (snippet + statistics) ou None se não encontrado."""
+    """Retorna o objeto de vídeo (snippet + statistics) ou None."""
     async with httpx.AsyncClient() as client:
         response = await client.get(
             "https://www.googleapis.com/youtube/v3/videos",
-            params={"part": "snippet,statistics", "id": video_id, "key": api_key},
-            timeout=4.0,
+            params={
+                "part": "snippet,statistics",
+                "id": video_id,
+                "key": api_key,
+            },
+            timeout=_TIMEOUT,
         )
         response.raise_for_status()
         items = response.json().get("items", [])
@@ -47,7 +54,7 @@ async def fetch_replies_page(
     api_key: str,
     page_token: str | None = None,
 ) -> dict:
-    """Busca replies de um comentário via comments.list (até 100 por página)."""
+    """Busca replies via comments.list (até 100 por página)."""
     params: dict = {
         "part": "snippet",
         "parentId": parent_id,
@@ -62,7 +69,7 @@ async def fetch_replies_page(
         response = await client.get(
             "https://www.googleapis.com/youtube/v3/comments",
             params=params,
-            timeout=4.0,
+            timeout=_TIMEOUT,
         )
         response.raise_for_status()
         return response.json()
@@ -81,8 +88,12 @@ async def fetch_channels_info(
             batch = channel_ids[i : i + 50]
             response = await client.get(
                 "https://www.googleapis.com/youtube/v3/channels",
-                params={"part": "snippet", "id": ",".join(batch), "key": api_key},
-                timeout=4.0,
+                params={
+                    "part": "snippet",
+                    "id": ",".join(batch),
+                    "key": api_key,
+                },
+                timeout=_TIMEOUT,
             )
             response.raise_for_status()
             for item in response.json().get("items", []):
