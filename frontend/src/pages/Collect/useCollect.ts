@@ -39,7 +39,8 @@ export function useCollect() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const enrichPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restoreAttemptedRef = useRef(false);
-  // Guard to prevent overlapping enrich calls
+  // Guards to prevent overlapping calls
+  const advancingRef = useRef(false);
   const enrichingRef = useRef(false);
 
   const stopPolling = useCallback(() => {
@@ -131,8 +132,9 @@ export function useCollect() {
 
   const advanceCollection = useCallback(
     async (current: CollectionStarted) => {
-      if (!token) return;
+      if (!token || advancingRef.current) return;
       if (!current.next_page_token) return;
+      advancingRef.current = true;
 
       try {
         const next = await collectApi.nextPage(
@@ -144,7 +146,6 @@ export function useCollect() {
         if (next.status === "completed" || next.status === "failed") {
           stopPolling();
           if (next.status === "completed" && next.enrich_status === "pending") {
-            // Transition to enrich loop
             _startEnrichLoop(next.collection_id);
           } else {
             setState((s) => ({ ...s, isActivelyPolling: false }));
@@ -163,6 +164,8 @@ export function useCollect() {
           error: err instanceof Error ? err.message : "Erro ao continuar coleta.",
         }));
         void loadCollections();
+      } finally {
+        advancingRef.current = false;
       }
     },
     [token, stopPolling, loadCollections, _startEnrichLoop]
@@ -170,7 +173,8 @@ export function useCollect() {
 
   const pollStatus = useCallback(
     async (collectionId: string) => {
-      if (!token) return;
+      if (!token || advancingRef.current) return;
+      advancingRef.current = true;
       try {
         const status = await collectApi.getStatus(collectionId, token);
         setState((s) => ({
@@ -201,6 +205,8 @@ export function useCollect() {
       } catch {
         stopPolling();
         setState((s) => ({ ...s, isActivelyPolling: false }));
+      } finally {
+        advancingRef.current = false;
       }
     },
     [token, stopPolling, loadCollections, _startEnrichLoop]
@@ -362,6 +368,24 @@ export function useCollect() {
       if (!token) return;
       try {
         await collectApi.delete(collectionId, token);
+        // Se a coleta ativa é a que foi deletada, limpar tudo
+        setState((s) => {
+          if (s.active?.collection_id === collectionId) {
+            stopAll();
+            sessionStorage.removeItem(STORAGE_KEY);
+            apiKeyRef.current = "";
+            return {
+              ...s,
+              active: null,
+              error: null,
+              isActivelyPolling: false,
+              enrichPhase: null,
+              enrichRemaining: 0,
+              enrichDone: false,
+            };
+          }
+          return s;
+        });
         void loadCollections();
       } catch (err) {
         setState((s) => ({
