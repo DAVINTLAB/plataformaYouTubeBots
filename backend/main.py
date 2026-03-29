@@ -1,8 +1,11 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from database import get_db
 from routers import auth, collect, users
 
 # Em produção, definir CORS_ORIGINS no Vercel Dashboard:
@@ -28,5 +31,6 @@ app.include_router(collect.router)
 
 
 @app.get("/health")
-def health():
+def health(db: Session = Depends(get_db)):
+    db.execute(text("SELECT 1"))
     return {"status": "ok"}

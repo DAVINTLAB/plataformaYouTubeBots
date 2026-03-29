@@ -73,6 +73,14 @@ export interface ImportRequest {
 }
 
 export const collectApi = {
+  warmup: async () => {
+    try {
+      await fetch(`${API_URL}/health`);
+    } catch {
+      // best-effort
+    }
+  },
+
   start: (data: { video_id: string; api_key: string }, token: string) =>
     request<CollectionStarted>("/collect", { method: "POST", body: JSON.stringify(data) }, token),
 

@@ -241,6 +241,7 @@ export function useCollect() {
       apiKeyRef.current = apiKey;
 
       try {
+        await collectApi.warmup();
         const result = await collectApi.start({ video_id: videoId, api_key: apiKey }, token);
         sessionStorage.setItem(STORAGE_KEY, result.collection_id);
         setState((s) => ({ ...s, active: result, loading: false }));
@@ -295,6 +296,7 @@ export function useCollect() {
 
       // Otherwise resume page collection
       try {
+        await collectApi.warmup();
         const next = await collectApi.nextPage(
           { collection_id: active.collection_id, api_key: apiKey },
           token
