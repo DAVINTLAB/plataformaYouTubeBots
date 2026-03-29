@@ -400,6 +400,18 @@ export function useCollect() {
     void (async () => {
       try {
         const status = await collectApi.getStatus(savedId, token);
+
+        // Só restaura coletas que precisam de ação (running ou enrich pendente)
+        const needsResume =
+          status.status === "running" ||
+          status.enrich_status === "pending" ||
+          status.enrich_status === "enriching";
+
+        if (!needsResume) {
+          sessionStorage.removeItem(STORAGE_KEY);
+          return;
+        }
+
         setState((s) => {
           if (s.active) return s;
           return {
@@ -417,13 +429,6 @@ export function useCollect() {
             },
           };
         });
-        if (
-          status.status !== "running" &&
-          status.enrich_status !== "pending" &&
-          status.enrich_status !== "enriching"
-        ) {
-          sessionStorage.removeItem(STORAGE_KEY);
-        }
       } catch {
         sessionStorage.removeItem(STORAGE_KEY);
       }
