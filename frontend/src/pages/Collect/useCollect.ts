@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { collectApi, CollectionStarted, CollectionSummary, ImportRequest } from "../../api/collect";
+import {
+  collectApi,
+  CollectionStarted,
+  CollectionSummary,
+  EnrichResponse,
+  ImportRequest,
+} from "../../api/collect";
 import { useAuthContext } from "../../contexts/AuthContext";
 
 const STORAGE_KEY = "davint_active_collection_id";
@@ -10,6 +16,10 @@ interface CollectState {
   active: CollectionStarted | null;
   collections: CollectionSummary[];
   isActivelyPolling: boolean;
+  // Enrich progress
+  enrichPhase: "replies" | "channels" | null;
+  enrichRemaining: number;
+  enrichDone: boolean;
 }
 
 export function useCollect() {
@@ -20,20 +30,38 @@ export function useCollect() {
     active: null,
     collections: [],
     isActivelyPolling: false,
+    enrichPhase: null,
+    enrichRemaining: 0,
+    enrichDone: false,
   });
 
-  // apiKey kept only in a ref — never in state (avoids accidental persistence)
   const apiKeyRef = useRef<string>("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const enrichPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restoreAttemptedRef = useRef(false);
+  // Guard to prevent overlapping enrich calls
+  const enrichingRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current !== null) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-    setState((s) => ({ ...s, isActivelyPolling: false }));
   }, []);
+
+  const stopEnrichPolling = useCallback(() => {
+    if (enrichPollingRef.current !== null) {
+      clearInterval(enrichPollingRef.current);
+      enrichPollingRef.current = null;
+    }
+    enrichingRef.current = false;
+  }, []);
+
+  const stopAll = useCallback(() => {
+    stopPolling();
+    stopEnrichPolling();
+    setState((s) => ({ ...s, isActivelyPolling: false }));
+  }, [stopPolling, stopEnrichPolling]);
 
   const loadCollections = useCallback(async () => {
     if (!token) return;
@@ -45,7 +73,62 @@ export function useCollect() {
     }
   }, [token]);
 
-  // Advance pagination: keep calling next-page until done
+  // ─── Enrich loop ────────────────────────────────────────────────────────
+
+  const advanceEnrich = useCallback(
+    async (collectionId: string) => {
+      if (!token || enrichingRef.current) return;
+      enrichingRef.current = true;
+      try {
+        const result: EnrichResponse = await collectApi.enrich(
+          collectionId,
+          apiKeyRef.current,
+          token
+        );
+        setState((s) => ({
+          ...s,
+          enrichPhase: result.phase,
+          enrichRemaining: result.remaining,
+          enrichDone: result.done,
+          active: s.active ? { ...s.active, total_comments: s.active.total_comments } : s.active,
+        }));
+        if (result.done) {
+          stopEnrichPolling();
+          setState((s) => ({ ...s, isActivelyPolling: false }));
+          apiKeyRef.current = "";
+          sessionStorage.removeItem(STORAGE_KEY);
+          void loadCollections();
+        }
+      } catch (err) {
+        stopEnrichPolling();
+        setState((s) => ({
+          ...s,
+          isActivelyPolling: false,
+          error: err instanceof Error ? err.message : "Erro ao enriquecer coleta.",
+        }));
+        apiKeyRef.current = "";
+        void loadCollections();
+      } finally {
+        enrichingRef.current = false;
+      }
+    },
+    [token, stopEnrichPolling, loadCollections]
+  );
+
+  const _startEnrichLoop = useCallback(
+    (collectionId: string) => {
+      // First call immediately
+      void advanceEnrich(collectionId);
+      enrichPollingRef.current = setInterval(() => {
+        void advanceEnrich(collectionId);
+      }, 3000);
+      setState((s) => ({ ...s, isActivelyPolling: true }));
+    },
+    [advanceEnrich]
+  );
+
+  // ─── Collection page loop ──────────────────────────────────────────────
+
   const advanceCollection = useCallback(
     async (current: CollectionStarted) => {
       if (!token) return;
@@ -60,9 +143,15 @@ export function useCollect() {
 
         if (next.status === "completed" || next.status === "failed") {
           stopPolling();
-          apiKeyRef.current = "";
-          sessionStorage.removeItem(STORAGE_KEY);
-          void loadCollections();
+          if (next.status === "completed" && next.enrich_status === "pending") {
+            // Transition to enrich loop
+            _startEnrichLoop(next.collection_id);
+          } else {
+            setState((s) => ({ ...s, isActivelyPolling: false }));
+            apiKeyRef.current = "";
+            sessionStorage.removeItem(STORAGE_KEY);
+            void loadCollections();
+          }
         }
       } catch (err) {
         stopPolling();
@@ -70,15 +159,15 @@ export function useCollect() {
         setState((s) => ({
           ...s,
           loading: false,
+          isActivelyPolling: false,
           error: err instanceof Error ? err.message : "Erro ao continuar coleta.",
         }));
         void loadCollections();
       }
     },
-    [token, stopPolling, loadCollections]
+    [token, stopPolling, loadCollections, _startEnrichLoop]
   );
 
-  // Poll status while running (fallback: status endpoint)
   const pollStatus = useCallback(
     async (collectionId: string) => {
       if (!token) return;
@@ -91,20 +180,30 @@ export function useCollect() {
                 ...s.active,
                 status: status.status,
                 total_comments: status.total_comments,
+                enrich_status: status.enrich_status,
               }
             : s.active,
         }));
         if (status.status === "completed" || status.status === "failed") {
           stopPolling();
-          apiKeyRef.current = "";
-          sessionStorage.removeItem(STORAGE_KEY);
-          void loadCollections();
+          if (
+            status.status === "completed" &&
+            (status.enrich_status === "pending" || status.enrich_status === "enriching")
+          ) {
+            _startEnrichLoop(collectionId);
+          } else {
+            setState((s) => ({ ...s, isActivelyPolling: false }));
+            apiKeyRef.current = "";
+            sessionStorage.removeItem(STORAGE_KEY);
+            void loadCollections();
+          }
         }
       } catch {
         stopPolling();
+        setState((s) => ({ ...s, isActivelyPolling: false }));
       }
     },
-    [token, stopPolling, loadCollections]
+    [token, stopPolling, loadCollections, _startEnrichLoop]
   );
 
   const _startPollingLoop = useCallback(
@@ -125,10 +224,20 @@ export function useCollect() {
     [advanceCollection, pollStatus]
   );
 
+  // ─── Public actions ────────────────────────────────────────────────────
+
   const startCollection = useCallback(
     async (videoId: string, apiKey: string) => {
       if (!token) return;
-      setState((s) => ({ ...s, loading: true, error: null, active: null }));
+      setState((s) => ({
+        ...s,
+        loading: true,
+        error: null,
+        active: null,
+        enrichPhase: null,
+        enrichRemaining: 0,
+        enrichDone: false,
+      }));
       apiKeyRef.current = apiKey;
 
       try {
@@ -136,7 +245,17 @@ export function useCollect() {
         sessionStorage.setItem(STORAGE_KEY, result.collection_id);
         setState((s) => ({ ...s, active: result, loading: false }));
 
-        if (result.status === "completed" || result.status === "failed") {
+        if (result.status === "completed") {
+          if (result.enrich_status === "pending") {
+            _startEnrichLoop(result.collection_id);
+          } else {
+            apiKeyRef.current = "";
+            sessionStorage.removeItem(STORAGE_KEY);
+            void loadCollections();
+          }
+          return;
+        }
+        if (result.status === "failed") {
           apiKeyRef.current = "";
           sessionStorage.removeItem(STORAGE_KEY);
           void loadCollections();
@@ -153,24 +272,46 @@ export function useCollect() {
         }));
       }
     },
-    [token, loadCollections, _startPollingLoop]
+    [token, loadCollections, _startPollingLoop, _startEnrichLoop]
   );
 
-  // Resume an interrupted collection (next_page_token kept in DB)
   const resumeCollection = useCallback(
     async (apiKey: string) => {
       if (!token || !state.active) return;
       setState((s) => ({ ...s, loading: true, error: null }));
       apiKeyRef.current = apiKey;
 
+      const active = state.active;
+
+      // If collection is completed but enrich pending → resume enrich
+      if (
+        active.status === "completed" &&
+        (active.enrich_status === "pending" || active.enrich_status === "enriching")
+      ) {
+        setState((s) => ({ ...s, loading: false }));
+        _startEnrichLoop(active.collection_id);
+        return;
+      }
+
+      // Otherwise resume page collection
       try {
         const next = await collectApi.nextPage(
-          { collection_id: state.active.collection_id, api_key: apiKey },
+          { collection_id: active.collection_id, api_key: apiKey },
           token
         );
         setState((s) => ({ ...s, active: next, loading: false }));
 
-        if (next.status === "completed" || next.status === "failed") {
+        if (next.status === "completed") {
+          if (next.enrich_status === "pending") {
+            _startEnrichLoop(next.collection_id);
+          } else {
+            apiKeyRef.current = "";
+            sessionStorage.removeItem(STORAGE_KEY);
+            void loadCollections();
+          }
+          return;
+        }
+        if (next.status === "failed") {
           apiKeyRef.current = "";
           sessionStorage.removeItem(STORAGE_KEY);
           void loadCollections();
@@ -187,7 +328,7 @@ export function useCollect() {
         }));
       }
     },
-    [token, state.active, loadCollections, _startPollingLoop]
+    [token, state.active, loadCollections, _startPollingLoop, _startEnrichLoop]
   );
 
   const importCollectionFn = useCallback(
@@ -196,7 +337,12 @@ export function useCollect() {
       setState((s) => ({ ...s, loading: true, error: null, active: null }));
       try {
         const result = await collectApi.importCollection(data, token);
-        setState((s) => ({ ...s, active: result, loading: false }));
+        setState((s) => ({
+          ...s,
+          active: result,
+          loading: false,
+          enrichDone: true,
+        }));
         void loadCollections();
       } catch (err) {
         setState((s) => ({
@@ -227,12 +373,21 @@ export function useCollect() {
 
   const clearActive = useCallback(() => {
     sessionStorage.removeItem(STORAGE_KEY);
-    setState((s) => ({ ...s, active: null, error: null, isActivelyPolling: false }));
+    setState((s) => ({
+      ...s,
+      active: null,
+      error: null,
+      isActivelyPolling: false,
+      enrichPhase: null,
+      enrichRemaining: 0,
+      enrichDone: false,
+    }));
     apiKeyRef.current = "";
-    stopPolling();
-  }, [stopPolling]);
+    stopAll();
+  }, [stopAll]);
 
-  // Restore interrupted collection from sessionStorage on mount
+  // ─── Restore interrupted collection/enrich ─────────────────────────────
+
   useEffect(() => {
     if (!token || restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
@@ -244,7 +399,7 @@ export function useCollect() {
       try {
         const status = await collectApi.getStatus(savedId, token);
         setState((s) => {
-          if (s.active) return s; // already tracking a collection
+          if (s.active) return s;
           return {
             ...s,
             active: {
@@ -253,12 +408,17 @@ export function useCollect() {
               status: status.status,
               total_comments: status.total_comments,
               channel_dates_failed: status.channel_dates_failed ?? null,
-              next_page_token: null, // unknown after restore; backend has it
+              enrich_status: status.enrich_status ?? null,
+              next_page_token: null,
               created_at: status.collected_at ?? new Date().toISOString(),
             },
           };
         });
-        if (status.status !== "running") {
+        if (
+          status.status !== "running" &&
+          status.enrich_status !== "pending" &&
+          status.enrich_status !== "enriching"
+        ) {
           sessionStorage.removeItem(STORAGE_KEY);
         }
       } catch {
@@ -267,7 +427,7 @@ export function useCollect() {
     })();
   }, [token]);
 
-  // Warn on browser-level navigation (tab close, URL bar) when polling is active
+  // Warn on browser-level navigation when polling is active
   useEffect(() => {
     if (!state.isActivelyPolling) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -282,12 +442,16 @@ export function useCollect() {
     void loadCollections();
   }, [loadCollections]);
 
-  // Cleanup polling on unmount (does NOT clear sessionStorage — intentional)
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (pollingRef.current !== null) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
+      }
+      if (enrichPollingRef.current !== null) {
+        clearInterval(enrichPollingRef.current);
+        enrichPollingRef.current = null;
       }
       apiKeyRef.current = "";
     };
@@ -299,6 +463,9 @@ export function useCollect() {
     active: state.active,
     collections: state.collections,
     isActivelyPolling: state.isActivelyPolling,
+    enrichPhase: state.enrichPhase,
+    enrichRemaining: state.enrichRemaining,
+    enrichDone: state.enrichDone,
     startCollection,
     resumeCollection,
     importCollection: importCollectionFn,

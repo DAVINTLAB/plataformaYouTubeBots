@@ -1,9 +1,11 @@
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 
 import httpx
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.collection import Collection, Comment
@@ -16,6 +18,9 @@ from services.youtube import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Limite de tempo para o enrich não estourar os 10s do Vercel
+_ENRICH_WALL_CLOCK_LIMIT = 7.0
 
 
 def _safe_int(s: str | None) -> int | None:
@@ -65,14 +70,24 @@ def _parse_youtube_error(exc: httpx.HTTPStatusError) -> HTTPException:
                 status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Quota da API esgotada. Tente novamente amanhã.",
             )
-        if reason in ("forbidden", "videoNotFound"):
+        if reason == "videoNotFound":
             return HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 detail="Este vídeo é privado ou não está disponível.",
             )
+        if reason == "forbidden":
+            return HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Acesso negado pela API do YouTube. "
+                    "Verifique se a YouTube Data API v3 está habilitada "
+                    "no Google Cloud Console para esta API key."
+                ),
+            )
         return HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="API key inválida ou sem permissão.",
+            status.HTTP_403_FORBIDDEN,
+            detail=f"Acesso negado (reason: {reason}). "
+            "Verifique a API key e as permissões no Google Cloud Console.",
         )
     if http_status == 404:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail="Vídeo não encontrado.")
@@ -80,6 +95,9 @@ def _parse_youtube_error(exc: httpx.HTTPStatusError) -> HTTPException:
         status.HTTP_502_BAD_GATEWAY,
         detail=f"Erro na API do YouTube (HTTP {http_status}). Tente novamente.",
     )
+
+
+# ─── Inserção de comentários ─────────────────────────────────────────────────
 
 
 def _insert_single_comment(
@@ -155,104 +173,7 @@ def _insert_comments(db: Session, collection_id: uuid.UUID, items: list[dict]) -
     return inserted
 
 
-async def _fetch_remaining_replies(
-    db: Session,
-    collection_id: uuid.UUID,
-    parent_comment_id: str,
-    api_key: str,
-) -> int:
-    """Busca replies restantes (>5) de um thread via comments.list paginado."""
-    inserted = 0
-    page_token: str | None = None
-    while True:
-        data = await fetch_replies_page(parent_comment_id, api_key, page_token)
-        for reply in data.get("items", []):
-            if _insert_single_comment(
-                db,
-                collection_id,
-                reply["id"],
-                reply["snippet"],
-                parent_id=parent_comment_id,
-            ):
-                inserted += 1
-        db.commit()
-        page_token = data.get("nextPageToken")
-        if not page_token:
-            break
-    return inserted
-
-
-def _extract_new_channel_ids(
-    db: Session, collection_id: uuid.UUID, items: list[dict]
-) -> list[str]:
-    """
-    Retorna IDs de canais dos autores (top-level + replies) desta página
-    que ainda não têm author_channel_published_at resolvido nesta coleta.
-    """
-    page_ids: set[str] = set()
-    for item in items:
-        # Top-level author
-        top_cid = (
-            item["snippet"]["topLevelComment"]["snippet"].get("authorChannelId") or {}
-        ).get("value")
-        if top_cid:
-            page_ids.add(top_cid)
-        # Reply authors
-        for reply in item.get("replies", {}).get("comments", []):
-            reply_cid = (reply.get("snippet", {}).get("authorChannelId") or {}).get(
-                "value"
-            )
-            if reply_cid:
-                page_ids.add(reply_cid)
-
-    if not page_ids:
-        return []
-
-    already_resolved = {
-        row[0]
-        for row in db.query(Comment.author_channel_id)
-        .filter(
-            Comment.collection_id == collection_id,
-            Comment.author_channel_id.in_(page_ids),
-            Comment.author_channel_published_at.isnot(None),
-        )
-        .all()
-        if row[0]
-    }
-
-    return list(page_ids - already_resolved)
-
-
-async def _enrich_channel_dates(
-    db: Session,
-    collection_id: uuid.UUID,
-    channel_ids: list[str],
-    api_key: str,
-) -> bool:
-    """
-    Busca a data de criação de cada canal e atualiza os comentários.
-    Falhas são registradas em log mas não abortam a coleta.
-    Retorna True se sucesso, False se falhou.
-    """
-    if not channel_ids:
-        return True
-    try:
-        channel_dates = await fetch_channels_info(channel_ids, api_key)
-        for channel_id, published_at in channel_dates.items():
-            db.query(Comment).filter(
-                Comment.collection_id == collection_id,
-                Comment.author_channel_id == channel_id,
-            ).update({"author_channel_published_at": published_at})
-        db.commit()
-        return True
-    except Exception:
-        logger.exception(
-            "Falha ao buscar datas de criação de canais para coleta %s "
-            "(%d canais solicitados)",
-            collection_id,
-            len(channel_ids),
-        )
-        return False
+# ─── Coleta de páginas (leve — só comentários) ───────────────────────────────
 
 
 async def start_collection(
@@ -297,24 +218,6 @@ async def start_collection(
 
         _insert_comments(db, collection.id, items)
 
-        # Replies extras (threads com >5 replies → comments.list paginado)
-        for item in items:
-            total_replies = int(item["snippet"].get("totalReplyCount", 0))
-            inline_count = len(item.get("replies", {}).get("comments", []))
-            if total_replies > inline_count:
-                parent_id = item["snippet"]["topLevelComment"]["id"]
-                await _fetch_remaining_replies(db, collection.id, parent_id, api_key)
-
-        # Datas de criação dos canais dos autores (channels.list — batches de 50)
-        new_channel_ids = _extract_new_channel_ids(db, collection.id, items)
-        success = await _enrich_channel_dates(
-            db, collection.id, new_channel_ids, api_key
-        )
-        if not success:
-            collection.channel_dates_failed = True
-        elif collection.channel_dates_failed is None:
-            collection.channel_dates_failed = False
-
         total = db.query(Comment).filter(Comment.collection_id == collection.id).count()
 
         if not next_page_token:
@@ -322,6 +225,7 @@ async def start_collection(
             collection.total_comments = total
             collection.completed_at = datetime.now(UTC)
             collection.next_page_token = None
+            collection.enrich_status = "pending"
         else:
             collection.total_comments = total
             collection.next_page_token = next_page_token
@@ -349,7 +253,9 @@ async def start_collection(
         db.commit()
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro interno ao coletar comentários: {type(exc).__name__}: {exc}",
+            detail=(
+                "Erro interno ao coletar comentários: " f"{type(exc).__name__}: {exc}"
+            ),
         ) from exc
 
 
@@ -378,6 +284,7 @@ async def collect_next_page(
     if not collection.next_page_token:
         collection.status = "completed"
         collection.completed_at = datetime.now(UTC)
+        collection.enrich_status = "pending"
         db.commit()
         db.refresh(collection)
         return collection, None
@@ -396,22 +303,6 @@ async def collect_next_page(
 
         _insert_comments(db, collection.id, items)
 
-        # Replies extras (threads com >5 replies)
-        for item in items:
-            total_replies = int(item["snippet"].get("totalReplyCount", 0))
-            inline_count = len(item.get("replies", {}).get("comments", []))
-            if total_replies > inline_count:
-                parent_id = item["snippet"]["topLevelComment"]["id"]
-                await _fetch_remaining_replies(db, collection.id, parent_id, api_key)
-
-        # Datas de criação apenas para autores não resolvidos ainda
-        new_channel_ids = _extract_new_channel_ids(db, collection.id, items)
-        success = await _enrich_channel_dates(
-            db, collection.id, new_channel_ids, api_key
-        )
-        if not success:
-            collection.channel_dates_failed = True
-
         total = db.query(Comment).filter(Comment.collection_id == collection.id).count()
         collection.total_comments = total
 
@@ -419,6 +310,7 @@ async def collect_next_page(
             collection.status = "completed"
             collection.completed_at = datetime.now(UTC)
             collection.next_page_token = None
+            collection.enrich_status = "pending"
         else:
             collection.next_page_token = next_page_token
 
@@ -445,33 +337,253 @@ async def collect_next_page(
         db.commit()
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro interno ao continuar coleta: {type(exc).__name__}: {exc}",
+            detail=(
+                "Erro interno ao continuar coleta: " f"{type(exc).__name__}: {exc}"
+            ),
         ) from exc
 
 
-def get_collection_status(
-    db: Session, collection_id: uuid.UUID, user_id: uuid.UUID
-) -> Collection:
-    collection = (
-        db.query(Collection)
-        .filter(
-            Collection.id == collection_id,
-            Collection.collected_by == user_id,
+# ─── Enriquecimento pós-coleta (replies extras + channel dates) ──────────────
+
+
+def _threads_needing_replies(
+    db: Session, collection_id: uuid.UUID, limit: int = 5
+) -> list[tuple[str, int]]:
+    """
+    Retorna (comment_id, reply_count) dos top-level comments que têm
+    reply_count > quantidade de replies já inseridas no banco.
+    """
+    # Subquery: count de replies por parent_id
+    reply_counts = (
+        db.query(
+            Comment.parent_id.label("pid"),
+            func.count(Comment.id).label("actual"),
         )
-        .first()
+        .filter(
+            Comment.collection_id == collection_id,
+            Comment.parent_id.isnot(None),
+        )
+        .group_by(Comment.parent_id)
+        .subquery()
     )
+
+    results = (
+        db.query(Comment.comment_id, Comment.reply_count)
+        .outerjoin(
+            reply_counts,
+            Comment.comment_id == reply_counts.c.pid,
+        )
+        .filter(
+            Comment.collection_id == collection_id,
+            Comment.parent_id.is_(None),
+            Comment.reply_count > 0,
+            Comment.reply_count > func.coalesce(reply_counts.c.actual, 0),
+        )
+        .limit(limit)
+        .all()
+    )
+    return [(r[0], r[1]) for r in results]
+
+
+def _channels_needing_dates(
+    db: Session, collection_id: uuid.UUID, limit: int = 100
+) -> list[str]:
+    """
+    Retorna IDs de canais únicos sem author_channel_published_at.
+    """
+    results = (
+        db.query(Comment.author_channel_id)
+        .filter(
+            Comment.collection_id == collection_id,
+            Comment.author_channel_id.isnot(None),
+            Comment.author_channel_published_at.is_(None),
+        )
+        .distinct()
+        .limit(limit)
+        .all()
+    )
+    return [r[0] for r in results]
+
+
+async def enrich_collection(
+    db: Session,
+    collection_id: uuid.UUID,
+    api_key: str,
+) -> dict:
+    """
+    Enriquece uma coleta em batches pequenos.
+    Cada chamada processa: 5 threads de replies OU 100 canais.
+    Retorna {phase, processed, remaining, done}.
+    """
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
+    if collection is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
+    if collection.status != "completed":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Coleta ainda não foi concluída.",
+        )
+    if collection.enrich_status == "done":
+        return {
+            "phase": "channels",
+            "processed": 0,
+            "remaining": 0,
+            "done": True,
+        }
+
+    if collection.enrich_status != "enriching":
+        collection.enrich_status = "enriching"
+        db.commit()
+
+    t0 = time.monotonic()
+
+    try:
+        # ── Fase 1: replies extras ──
+        threads = _threads_needing_replies(db, collection_id, limit=5)
+        if threads:
+            processed = 0
+            for comment_id, _expected in threads:
+                if time.monotonic() - t0 > _ENRICH_WALL_CLOCK_LIMIT:
+                    break
+                await _fetch_thread_replies(db, collection_id, comment_id, api_key)
+                processed += 1
+
+            remaining = len(_threads_needing_replies(db, collection_id, limit=1000))
+
+            # Atualizar total_comments
+            total = (
+                db.query(Comment).filter(Comment.collection_id == collection_id).count()
+            )
+            collection.total_comments = total
+            db.commit()
+
+            return {
+                "phase": "replies",
+                "processed": processed,
+                "remaining": remaining,
+                "done": False,
+            }
+
+        # ── Fase 2: channel dates ──
+        channel_ids = _channels_needing_dates(db, collection_id, limit=100)
+        if channel_ids:
+            success = await _enrich_channel_dates(
+                db, collection_id, channel_ids, api_key
+            )
+            if not success:
+                collection.channel_dates_failed = True
+                db.commit()
+
+            remaining = len(_channels_needing_dates(db, collection_id, limit=1))
+            return {
+                "phase": "channels",
+                "processed": len(channel_ids),
+                "remaining": remaining,
+                "done": False,
+            }
+
+        # ── Tudo concluído ──
+        collection.enrich_status = "done"
+        if collection.channel_dates_failed is None:
+            collection.channel_dates_failed = False
+        db.commit()
+        return {
+            "phase": "channels",
+            "processed": 0,
+            "remaining": 0,
+            "done": True,
+        }
+
+    except httpx.HTTPStatusError as exc:
+        logger.exception(
+            "YouTube API erro HTTP %s durante enrich collection_id=%s",
+            exc.response.status_code,
+            collection_id,
+        )
+        raise _parse_youtube_error(exc) from exc
+    except Exception as exc:
+        logger.exception(
+            "Erro inesperado durante enrich collection_id=%s",
+            collection_id,
+        )
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Erro interno ao enriquecer coleta: " f"{type(exc).__name__}: {exc}"
+            ),
+        ) from exc
+
+
+async def _fetch_thread_replies(
+    db: Session,
+    collection_id: uuid.UUID,
+    parent_comment_id: str,
+    api_key: str,
+) -> int:
+    """Busca TODAS as replies de um thread via comments.list paginado."""
+    inserted = 0
+    page_token: str | None = None
+    while True:
+        data = await fetch_replies_page(parent_comment_id, api_key, page_token)
+        for reply in data.get("items", []):
+            if _insert_single_comment(
+                db,
+                collection_id,
+                reply["id"],
+                reply["snippet"],
+                parent_id=parent_comment_id,
+            ):
+                inserted += 1
+        db.commit()
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+    return inserted
+
+
+async def _enrich_channel_dates(
+    db: Session,
+    collection_id: uuid.UUID,
+    channel_ids: list[str],
+    api_key: str,
+) -> bool:
+    """
+    Busca a data de criação de cada canal e atualiza os comentários.
+    Retorna True se sucesso, False se falhou.
+    """
+    if not channel_ids:
+        return True
+    try:
+        channel_dates = await fetch_channels_info(channel_ids, api_key)
+        for channel_id, published_at in channel_dates.items():
+            db.query(Comment).filter(
+                Comment.collection_id == collection_id,
+                Comment.author_channel_id == channel_id,
+            ).update({"author_channel_published_at": published_at})
+        db.commit()
+        return True
+    except Exception:
+        logger.exception(
+            "Falha ao buscar datas de criação de canais para coleta %s "
+            "(%d canais solicitados)",
+            collection_id,
+            len(channel_ids),
+        )
+        return False
+
+
+# ─── Operações CRUD ──────────────────────────────────────────────────────────
+
+
+def get_collection_status(db: Session, collection_id: uuid.UUID) -> Collection:
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
     if collection is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
     return collection
 
 
-def list_collections(db: Session, user_id: uuid.UUID) -> list[Collection]:
-    return (
-        db.query(Collection)
-        .filter(Collection.collected_by == user_id)
-        .order_by(Collection.created_at.desc())
-        .all()
-    )
+def list_collections(db: Session) -> list[Collection]:
+    return db.query(Collection).order_by(Collection.created_at.desc()).all()
 
 
 def import_collection(
@@ -521,17 +633,8 @@ def import_collection(
     return collection
 
 
-def delete_collection(
-    db: Session, collection_id: uuid.UUID, user_id: uuid.UUID
-) -> None:
-    collection = (
-        db.query(Collection)
-        .filter(
-            Collection.id == collection_id,
-            Collection.collected_by == user_id,
-        )
-        .first()
-    )
+def delete_collection(db: Session, collection_id: uuid.UUID) -> None:
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
     if collection is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
     if collection.status == "running":

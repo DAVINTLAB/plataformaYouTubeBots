@@ -66,6 +66,20 @@ class ImportRequest(BaseModel):
     comments: list[ImportComment] = Field(min_length=1)
 
 
+# ─── Enrich ──────────────────────────────────────────────────────────────────
+
+
+class EnrichRequest(BaseModel):
+    api_key: SecretStr
+
+
+class EnrichResponse(BaseModel):
+    phase: Literal["replies", "channels"]
+    processed: int
+    remaining: int
+    done: bool
+
+
 # ─── Response schemas ─────────────────────────────────────────────────────────
 
 
@@ -76,6 +90,7 @@ class CollectionStarted(BaseModel):
     total_comments: int | None = None
     next_page_token: str | None = None
     channel_dates_failed: bool | None = None
+    enrich_status: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -88,6 +103,7 @@ class CollectionStatus(BaseModel):
     status: Literal["pending", "running", "completed", "failed"]
     total_comments: int | None = None
     channel_dates_failed: bool | None = None
+    enrich_status: str | None = None
     collected_at: datetime | None = None
     collected_by: str | None = None
 
@@ -101,6 +117,7 @@ class CollectionSummary(BaseModel):
     status: Literal["pending", "running", "completed", "failed"]
     total_comments: int | None = None
     channel_dates_failed: bool | None = None
+    enrich_status: str | None = None
     collected_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)

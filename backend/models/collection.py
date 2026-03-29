@@ -32,6 +32,10 @@ class Collection(Base):
     # None = não tentou (import), False = sucesso, True = falha em alguma página
     channel_dates_failed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # Enriquecimento pós-coleta (replies extras + channel dates)
+    # None = não aplicável (import/legado), pending, enriching, done
+    enrich_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     # Video metadata — populated on YouTube import (videos.list response)
     video_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     video_description: Mapped[str | None] = mapped_column(Text, nullable=True)

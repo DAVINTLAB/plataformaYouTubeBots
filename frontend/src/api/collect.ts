@@ -7,6 +7,7 @@ export interface CollectionStarted {
   total_comments: number | null;
   next_page_token: string | null;
   channel_dates_failed: boolean | null;
+  enrich_status: string | null;
   created_at: string;
 }
 
@@ -16,6 +17,7 @@ export interface CollectionStatus {
   status: "pending" | "running" | "completed" | "failed";
   total_comments: number | null;
   channel_dates_failed: boolean | null;
+  enrich_status: string | null;
   collected_at: string | null;
   collected_by: string | null;
 }
@@ -27,7 +29,15 @@ export interface CollectionSummary {
   status: "pending" | "running" | "completed" | "failed";
   total_comments: number | null;
   channel_dates_failed: boolean | null;
+  enrich_status: string | null;
   collected_at: string | null;
+}
+
+export interface EnrichResponse {
+  phase: "replies" | "channels";
+  processed: number;
+  remaining: number;
+  done: boolean;
 }
 
 // Formato flat — idêntico ao JSON exportado pela plataforma
@@ -74,6 +84,13 @@ export const collectApi = {
     request<CollectionStarted>(
       "/collect/import",
       { method: "POST", body: JSON.stringify(data) },
+      token
+    ),
+
+  enrich: (collectionId: string, apiKey: string, token: string) =>
+    request<EnrichResponse>(
+      `/collect/${collectionId}/enrich`,
+      { method: "POST", body: JSON.stringify({ api_key: apiKey }) },
       token
     ),
 

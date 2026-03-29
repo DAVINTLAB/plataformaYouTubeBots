@@ -198,16 +198,18 @@ const ADMIN_CARDS: StageCard[] = [
 
 interface CardProps {
   stage: StageCard;
+  restricted?: boolean;
   onClick: () => void;
 }
 
-function Card({ stage, onClick }: CardProps) {
+function Card({ stage, restricted = false, onClick }: CardProps) {
+  const clickable = stage.available && !restricted;
   return (
     <div
-      onClick={stage.available ? onClick : undefined}
+      onClick={clickable ? onClick : undefined}
       className={[
-        "bg-white rounded-xl border p-6 flex flex-col gap-4 transition-all duration-150",
-        stage.available
+        "bg-white rounded-xl border p-6 flex flex-col gap-4 transition-all duration-150 w-full",
+        clickable
           ? "border-gray-200 cursor-pointer hover:border-davint-400 hover:shadow-md"
           : "border-gray-200 opacity-60 cursor-default",
       ].join(" ")}
@@ -216,7 +218,7 @@ function Card({ stage, onClick }: CardProps) {
         <span
           className={[
             "inline-flex p-2 rounded-lg",
-            stage.available ? "bg-davint-400/10 text-davint-400" : "bg-gray-100 text-gray-400",
+            clickable ? "bg-davint-400/10 text-davint-400" : "bg-gray-100 text-gray-400",
           ].join(" ")}
         >
           {stage.icon}
@@ -224,10 +226,14 @@ function Card({ stage, onClick }: CardProps) {
         <span
           className={[
             "text-[11px] font-semibold px-2.5 py-0.5 rounded-full",
-            stage.available ? "bg-green-50 text-green-600" : "bg-gray-100 text-gray-400",
+            restricted
+              ? "bg-orange-50 text-orange-600"
+              : stage.available
+                ? "bg-green-50 text-green-600"
+                : "bg-gray-100 text-gray-400",
           ].join(" ")}
         >
-          {stage.available ? "Disponível" : "Em breve"}
+          {restricted ? "Restrito a admins" : stage.available ? "Disponível" : "Em breve"}
         </span>
       </div>
 
@@ -239,7 +245,7 @@ function Card({ stage, onClick }: CardProps) {
         <p className="text-sm text-gray-500 leading-relaxed">{stage.description}</p>
       </div>
 
-      {stage.available && (
+      {clickable && (
         <div className="flex items-center gap-1 text-sm font-semibold text-davint-400 mt-auto">
           Acessar
           <svg
@@ -267,18 +273,18 @@ export function HomePage() {
   const navigate = useNavigate();
   const [showChangePassword, setShowChangePassword] = useState(false);
 
-  const pipelineStages = PIPELINE_STAGES.filter((s) => !s.adminOnly || isAdmin);
+  const pipelineStages = PIPELINE_STAGES;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <PageHeader onChangePassword={() => setShowChangePassword(true)} />
 
       {/* Main */}
-      <main className="flex-1 px-8 py-9 max-w-5xl w-full mx-auto">
+      <main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">
         {/* Welcome */}
         <div className="mb-9">
           <h1 className="text-2xl font-bold text-gray-800 tracking-tight mb-1">
-            Olá, {user?.username}
+            Olá, {user?.name ?? user?.username}
           </h1>
           <p className="text-sm text-gray-500">
             Selecione uma etapa do pipeline de análise para começar.
@@ -290,9 +296,18 @@ export function HomePage() {
           <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-4">
             Pipeline de análise
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="flex flex-wrap justify-center gap-4">
             {pipelineStages.map((stage) => (
-              <Card key={stage.route} stage={stage} onClick={() => navigate(stage.route)} />
+              <div
+                key={stage.route}
+                className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.7rem)] flex"
+              >
+                <Card
+                  stage={stage}
+                  restricted={stage.adminOnly && !isAdmin}
+                  onClick={() => navigate(stage.route)}
+                />
+              </div>
             ))}
           </div>
         </section>

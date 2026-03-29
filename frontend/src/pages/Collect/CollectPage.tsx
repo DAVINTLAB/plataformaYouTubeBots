@@ -10,6 +10,23 @@ import { useCollect } from "./useCollect";
 
 type Tab = "collect" | "import";
 
+function getDisplayStatus(
+  status: string,
+  enrichStatus: string | null,
+  enrichPhase: "replies" | "channels" | null,
+  enrichDone: boolean
+): string {
+  if (status === "completed") {
+    if (enrichDone || enrichStatus === "done" || enrichStatus === null) {
+      return "completed";
+    }
+    if (enrichPhase === "replies") return "enriching_replies";
+    if (enrichPhase === "channels") return "enriching_channels";
+    return "enriching";
+  }
+  return status;
+}
+
 export function CollectPage() {
   const { token } = useAuthContext();
   const navigate = useNavigate();
@@ -19,6 +36,9 @@ export function CollectPage() {
     active,
     collections,
     isActivelyPolling,
+    enrichPhase,
+    enrichRemaining,
+    enrichDone,
     startCollection,
     resumeCollection,
     importCollection,
@@ -46,8 +66,17 @@ export function CollectPage() {
   } | null>(null);
 
   const isRunning = active !== null && (active.status === "running" || active.status === "pending");
-
   const isInterrupted = isRunning && !isActivelyPolling;
+
+  const isEnriching = active?.status === "completed" && !enrichDone && isActivelyPolling;
+  const isEnrichInterrupted =
+    active?.status === "completed" &&
+    !enrichDone &&
+    !isActivelyPolling &&
+    (active?.enrich_status === "pending" || active?.enrich_status === "enriching");
+  const isFullyDone =
+    active?.status === "completed" &&
+    (enrichDone || active?.enrich_status === "done" || active?.enrich_status === null);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -128,7 +157,7 @@ export function CollectPage() {
       <PageHeader breadcrumbs={[{ label: "Início", to: "/" }, { label: "Coletar Comentários" }]} />
 
       {/* Main */}
-      <main className="flex-1 px-8 py-9 max-w-3xl w-full mx-auto">
+      <main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800 tracking-tight mb-1">
             Coletar Comentários
@@ -356,7 +385,14 @@ export function CollectPage() {
                 </p>
                 <p className="text-base font-mono font-semibold text-gray-800">{active.video_id}</p>
               </div>
-              <StatusBadge status={active.status} />
+              <StatusBadge
+                status={getDisplayStatus(
+                  active.status,
+                  active.enrich_status,
+                  enrichPhase,
+                  enrichDone
+                )}
+              />
             </div>
 
             {/* Coletando ativamente */}
@@ -471,7 +507,112 @@ export function CollectPage() {
               </div>
             )}
 
-            {active.status === "completed" && (
+            {/* Enriquecendo — replies extras e dados dos canais */}
+            {isEnriching && (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold text-gray-800">{active.total_comments ?? 0}</span>{" "}
+                  comentários coletados. Buscando dados complementares...
+                </p>
+                <div className="flex items-center gap-3">
+                  <svg
+                    className="animate-spin h-5 w-5 text-davint-400 shrink-0"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">
+                      {enrichPhase === "replies"
+                        ? "Buscando respostas restantes..."
+                        : "Obtendo datas de criação dos canais..."}
+                    </p>
+                    {enrichRemaining > 0 && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {enrichRemaining} {enrichPhase === "replies" ? "threads" : "autores"}{" "}
+                        restantes
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-3 bg-davint-50 rounded-lg">
+                  <p className="text-xs text-davint-600">
+                    Aguarde nesta página. Se navegar para outra tela, o enriquecimento pausa — mas
+                    os dados já coletados são preservados.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Enrich interrompido — precisa de API key para retomar */}
+            {isEnrichInterrupted && (
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-3">
+                  <span className="font-semibold text-gray-800">{active.total_comments ?? 0}</span>{" "}
+                  comentários coletados. O enriquecimento foi interrompido.
+                </p>
+                <div className="flex items-start gap-3 mb-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-semibold text-yellow-800">
+                      Enriquecimento interrompido
+                    </p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Os comentários foram coletados, mas faltam respostas extras e/ou datas de
+                      criação dos canais. Informe a API key para retomar.
+                    </p>
+                  </div>
+                </div>
+                <form onSubmit={handleResume} className="flex gap-2">
+                  <input
+                    className="form-input flex-1"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Informe a API key para continuar (AIza…)"
+                    value={resumeApiKey}
+                    onChange={(e) => setResumeApiKey(e.target.value)}
+                    disabled={loading}
+                    required
+                  />
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={loading || !resumeApiKey.trim()}
+                  >
+                    Continuar
+                  </button>
+                </form>
+                {error && <div className="alert alert-error mt-3">{error}</div>}
+              </div>
+            )}
+
+            {/* Totalmente concluído */}
+            {isFullyDone && (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-gray-600">
                   <span className="font-semibold text-gray-800">{active.total_comments ?? 0}</span>{" "}
@@ -499,7 +640,7 @@ export function CollectPage() {
                 )}
                 {active.channel_dates_failed === false && (
                   <p className="text-xs text-green-600">
-                    ✓ Datas de criação dos canais dos autores obtidas com sucesso.
+                    Dados dos autores e respostas coletados com sucesso.
                   </p>
                 )}
                 <div className="flex gap-3">
@@ -546,9 +687,10 @@ export function CollectPage() {
                     <th className="text-left py-2.5 pr-4 text-[11px] font-bold uppercase tracking-wider text-gray-400">
                       Concluída em
                     </th>
-                    <th className="text-left py-2.5 pr-6 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                      Ações
+                    <th className="text-left py-2.5 pr-4 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                      Exportar
                     </th>
+                    <th className="text-right py-2.5 pr-6 text-[11px] font-bold uppercase tracking-wider text-gray-400"></th>
                   </tr>
                 </thead>
                 <tbody className="px-6">
@@ -563,7 +705,15 @@ export function CollectPage() {
                         <p className="text-xs font-mono text-gray-400">{col.video_id}</p>
                       </td>
                       <td className="py-3 pr-4">
-                        <StatusBadge status={col.status} size="sm" />
+                        <StatusBadge
+                          status={getDisplayStatus(
+                            col.status,
+                            col.enrich_status,
+                            null,
+                            col.enrich_status === "done" || col.enrich_status === null
+                          )}
+                          size="sm"
+                        />
                       </td>
                       <td className="py-3 pr-4 text-sm text-gray-600">
                         {col.total_comments ?? "—"}
@@ -575,7 +725,7 @@ export function CollectPage() {
                             })
                           : "—"}
                       </td>
-                      <td className="py-3 pr-6">
+                      <td className="py-3 pr-4">
                         <div className="flex items-center gap-3">
                           {col.status === "completed" &&
                             (downloadState?.id === col.collection_id ? (
@@ -606,36 +756,37 @@ export function CollectPage() {
                                 </button>
                               </>
                             ))}
-                          {col.status !== "running" &&
-                            col.collection_id !== active?.collection_id && (
-                              <button
-                                className="btn btn-danger btn-sm"
-                                onClick={() => {
-                                  if (
-                                    window.confirm(
-                                      `Deletar a coleta "${col.video_title ?? col.video_id}"?\n\nEsta ação remove todos os comentários e não pode ser desfeita.`
-                                    )
-                                  ) {
-                                    void deleteCollection(col.collection_id);
-                                  }
-                                }}
-                              >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 16 16"
-                                  fill="currentColor"
-                                  className="w-3.5 h-3.5"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.711Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                                Deletar
-                              </button>
-                            )}
                         </div>
+                      </td>
+                      <td className="py-3 pr-6 text-right">
+                        {col.status !== "running" &&
+                          col.collection_id !== active?.collection_id && (
+                            <button
+                              className="text-xs font-medium text-red-400 hover:text-red-600 transition-colors"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Deletar a coleta "${col.video_title ?? col.video_id}"?\n\nEsta ação remove todos os comentários e não pode ser desfeita.`
+                                  )
+                                ) {
+                                  void deleteCollection(col.collection_id);
+                                }
+                              }}
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 16 16"
+                                fill="currentColor"
+                                className="w-4 h-4"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.711Z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            </button>
+                          )}
                       </td>
                     </tr>
                   ))}

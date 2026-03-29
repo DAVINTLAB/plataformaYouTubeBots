@@ -1,8 +1,11 @@
 const LABEL: Record<string, string> = {
   pending: "Aguardando",
-  running: "Coletando",
+  running: "Coletando comentários",
   completed: "Concluída",
   failed: "Falhou",
+  enriching_replies: "Coletando respostas",
+  enriching_channels: "Coletando dados dos autores",
+  enriching: "Enriquecendo dados",
 };
 
 const COLOR: Record<string, string> = {
@@ -10,6 +13,9 @@ const COLOR: Record<string, string> = {
   running: "bg-blue-50 text-blue-700",
   completed: "bg-green-50 text-green-600",
   failed: "bg-red-50 text-red-600",
+  enriching_replies: "bg-purple-50 text-purple-700",
+  enriching_channels: "bg-purple-50 text-purple-700",
+  enriching: "bg-purple-50 text-purple-700",
 };
 
 interface StatusBadgeProps {

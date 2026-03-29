@@ -49,7 +49,7 @@ export function UsersPage() {
       />
 
       {/* Conteúdo */}
-      <main className="flex-1 px-8 py-9 max-w-4xl w-full mx-auto">
+      <main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="flex items-center justify-between px-7 py-6 border-b border-gray-200">
             <div>

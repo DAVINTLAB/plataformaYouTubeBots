@@ -11,6 +11,13 @@ api/         → chamadas ao backend — única camada que faz fetch (DIP)
 
 Componentes nunca fazem `fetch` diretamente — sempre via hooks que consomem `api/`.
 
+## Layout
+
+- **Largura máxima**: todas as páginas usam `max-w-6xl` (1152px) — otimizado para monitores 1080p
+- **Container padrão**: `<main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">`
+- **Grid de cards na HomePage**: `flex flex-wrap justify-center gap-4` — layout 3+2 com segunda linha centrada
+- **Cards de etapas admin-only**: visíveis para todos os usuários, mas com badge "Restrito a admins" (laranja) e sem interação para anotadores — o usuário precisa saber que a etapa existe no pipeline
+
 ## SOLID na prática
 
 ### SRP — um componente, uma responsabilidade visual
