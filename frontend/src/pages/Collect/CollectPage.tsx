@@ -26,8 +26,9 @@ function useElapsed(startIso: string | null, running: boolean): number {
       if (intervalRef.current) clearInterval(intervalRef.current);
       return;
     }
-    const start = new Date(startIso).getTime();
-    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
+    const iso = startIso.endsWith("Z") ? startIso : startIso + "Z";
+    const start = new Date(iso).getTime();
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
     tick();
     intervalRef.current = setInterval(tick, 1000);
     return () => {
