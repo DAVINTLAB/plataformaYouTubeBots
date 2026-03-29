@@ -116,7 +116,6 @@ async def enrich(
         db,
         collection_id,
         payload.api_key.get_secret_value(),
-        current_user.id,
     )
     return EnrichResponse(**result)
 
@@ -127,7 +126,7 @@ def get_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    collection = get_collection_status(db, collection_id, current_user.id)
+    collection = get_collection_status(db, collection_id)
     return _to_status(collection, current_user.username)
 
 
@@ -138,7 +137,7 @@ def export_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    collection = get_collection_status(db, collection_id, current_user.id)
+    collection = get_collection_status(db, collection_id)
     comments = export_comments(db, collection_id)
     video_id = collection.video_id
 
@@ -273,7 +272,7 @@ def delete_collection_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    delete_collection(db, collection_id, current_user.id)
+    delete_collection(db, collection_id)
 
 
 @router.get("", response_model=list[CollectionSummary])
@@ -281,5 +280,5 @@ def list_user_collections(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    collections = list_collections(db, current_user.id)
+    collections = list_collections(db)
     return [_to_summary(c) for c in collections]

@@ -70,14 +70,24 @@ def _parse_youtube_error(exc: httpx.HTTPStatusError) -> HTTPException:
                 status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Quota da API esgotada. Tente novamente amanhã.",
             )
-        if reason in ("forbidden", "videoNotFound"):
+        if reason == "videoNotFound":
             return HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 detail="Este vídeo é privado ou não está disponível.",
             )
+        if reason == "forbidden":
+            return HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Acesso negado pela API do YouTube. "
+                    "Verifique se a YouTube Data API v3 está habilitada "
+                    "no Google Cloud Console para esta API key."
+                ),
+            )
         return HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="API key inválida ou sem permissão.",
+            status.HTTP_403_FORBIDDEN,
+            detail=f"Acesso negado (reason: {reason}). "
+            "Verifique a API key e as permissões no Google Cloud Console.",
         )
     if http_status == 404:
         return HTTPException(status.HTTP_404_NOT_FOUND, detail="Vídeo não encontrado.")
@@ -343,12 +353,10 @@ def _threads_needing_replies(
     Retorna (comment_id, reply_count) dos top-level comments que têm
     reply_count > quantidade de replies já inseridas no banco.
     """
-    from sqlalchemy import literal_column
-
     # Subquery: count de replies por parent_id
     reply_counts = (
         db.query(
-            Comment.parent_id,
+            Comment.parent_id.label("pid"),
             func.count(Comment.id).label("actual"),
         )
         .filter(
@@ -363,14 +371,13 @@ def _threads_needing_replies(
         db.query(Comment.comment_id, Comment.reply_count)
         .outerjoin(
             reply_counts,
-            Comment.comment_id == reply_counts.c.parent_id,
+            Comment.comment_id == reply_counts.c.pid,
         )
         .filter(
             Comment.collection_id == collection_id,
             Comment.parent_id.is_(None),
             Comment.reply_count > 0,
-            Comment.reply_count
-            > func.coalesce(reply_counts.c[literal_column("'actual'")], 0),
+            Comment.reply_count > func.coalesce(reply_counts.c.actual, 0),
         )
         .limit(limit)
         .all()
@@ -402,21 +409,13 @@ async def enrich_collection(
     db: Session,
     collection_id: uuid.UUID,
     api_key: str,
-    user_id: uuid.UUID,
 ) -> dict:
     """
     Enriquece uma coleta em batches pequenos.
     Cada chamada processa: 5 threads de replies OU 100 canais.
     Retorna {phase, processed, remaining, done}.
     """
-    collection = (
-        db.query(Collection)
-        .filter(
-            Collection.id == collection_id,
-            Collection.collected_by == user_id,
-        )
-        .first()
-    )
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
     if collection is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
     if collection.status != "completed":
@@ -576,29 +575,15 @@ async def _enrich_channel_dates(
 # ─── Operações CRUD ──────────────────────────────────────────────────────────
 
 
-def get_collection_status(
-    db: Session, collection_id: uuid.UUID, user_id: uuid.UUID
-) -> Collection:
-    collection = (
-        db.query(Collection)
-        .filter(
-            Collection.id == collection_id,
-            Collection.collected_by == user_id,
-        )
-        .first()
-    )
+def get_collection_status(db: Session, collection_id: uuid.UUID) -> Collection:
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
     if collection is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
     return collection
 
 
-def list_collections(db: Session, user_id: uuid.UUID) -> list[Collection]:
-    return (
-        db.query(Collection)
-        .filter(Collection.collected_by == user_id)
-        .order_by(Collection.created_at.desc())
-        .all()
-    )
+def list_collections(db: Session) -> list[Collection]:
+    return db.query(Collection).order_by(Collection.created_at.desc()).all()
 
 
 def import_collection(
@@ -648,17 +633,8 @@ def import_collection(
     return collection
 
 
-def delete_collection(
-    db: Session, collection_id: uuid.UUID, user_id: uuid.UUID
-) -> None:
-    collection = (
-        db.query(Collection)
-        .filter(
-            Collection.id == collection_id,
-            Collection.collected_by == user_id,
-        )
-        .first()
-    )
+def delete_collection(db: Session, collection_id: uuid.UUID) -> None:
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
     if collection is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
     if collection.status == "running":

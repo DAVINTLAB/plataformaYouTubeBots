@@ -204,19 +204,18 @@ def test_recoleta_next_page_com_mesmos_comentarios_nao_duplica(
 # ---------------------------------------------------------------------------
 
 
-def test_youtube_403_retorna_400_com_mensagem_amigavel(
+def test_youtube_403_retorna_erro_com_mensagem_amigavel(
     client, auth_as_user, stub_youtube_403
 ):
-    """Stub: HTTPStatusError 403. Afirma HTTP 400 sem expor detalhes internos."""
+    """Stub: HTTPStatusError 403 forbidden. Afirma mensagem amigável."""
     response = client.post(
         "/collect",
         json={"video_id": "dQw4w9WgXcQ", "api_key": "AIzaFAKEKEY"},
     )
-    assert response.status_code == 400
+    assert response.status_code == 403
     body = response.json()
     assert "detail" in body
-    # Mensagem amigável, sem stack trace ou detalhes internos
-    assert len(body["detail"]) < 200
+    assert "api" in body["detail"].lower() or "acesso" in body["detail"].lower()
 
 
 def test_youtube_403_quota_retorna_429(client, auth_as_user, mocker):
