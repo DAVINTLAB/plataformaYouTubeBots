@@ -13,8 +13,6 @@ from models.user import User
 from schemas.clean import (
     DatasetCreate,
     DatasetImport,
-    DatasetImportChunk,
-    DatasetImportChunkResponse,
     DatasetResponse,
     DatasetSummary,
     PreviewResponse,
@@ -25,7 +23,6 @@ from services.clean.service import (
     delete_dataset,
     get_dataset_with_entries,
     import_dataset,
-    import_dataset_chunk,
     list_datasets,
     preview,
 )
@@ -119,16 +116,6 @@ def import_dataset_endpoint(
         criteria_applied=dataset.criteria_applied,
         created_at=dataset.created_at,
     )
-
-
-@router.post("/import-chunk", response_model=DatasetImportChunkResponse)
-def import_chunk_endpoint(
-    payload: DatasetImportChunk,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    result = import_dataset_chunk(db, payload.dataset_id, payload.users, payload.done)
-    return DatasetImportChunkResponse(**result)
 
 
 # ─── Listagem ────────────────────────────────────────────────────────────────
