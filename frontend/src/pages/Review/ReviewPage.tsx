@@ -510,12 +510,7 @@ function ConflictsTab({
       </div>
 
       {totalPages > 1 && (
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={onPageChange}
-          total={total}
-        />
+        <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} total={total} />
       )}
     </div>
   );
@@ -618,12 +613,7 @@ function BotsTab({
       </div>
 
       {totalPages > 1 && (
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={onPageChange}
-          total={total}
-        />
+        <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} total={total} />
       )}
     </div>
   );
