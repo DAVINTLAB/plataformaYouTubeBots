@@ -232,16 +232,16 @@ Todas as etapas do pipeline que produzem dados devem permitir **exportar** e **i
 
 | Etapa | Export | Import |
 |-------|--------|--------|
-| US-02 · Coleta | `GET /collect/{id}/export?format=csv\|json` | `POST /collect/import` + `POST /collect/import-chunk` (paginado, 2000 comments/batch, limite Vercel 4.5MB) |
-| US-03 · Dataset | `GET /clean/datasets/{id}/download?format=csv\|json` | `POST /clean/import` (dataset pré-curado com usuários selecionados) |
-| US-04 · Anotação | Export do dataset com anotações (bot/humano + justificativa) | Import de anotações pré-existentes |
-| US-05 · Revisão | Export do dataset final (anotado + desempatado) — resultado final da pesquisa | Import de dataset já revisado/desempatado |
+| US-02 · Coleta | `GET /collect/{id}/export?format=csv\|json` | `POST /collect/import` + `POST /collect/import-chunk` (paginado, 2000/batch) |
+| US-03 · Dataset | `GET /clean/datasets/{id}/download?format=csv\|json` | `POST /clean/import` + `POST /clean/import-chunk` (paginado) |
+| US-04 · Anotação | `GET /annotate/export?format=csv\|json` | `POST /annotate/import` + `POST /annotate/import-chunk` (paginado) |
+| US-05 · Revisão | Export do dataset final (anotado + desempatado) | Import paginado do dataset revisado |
 
 ### Regras obrigatórias
 
 - **Simetria export/import**: o formato de import deve ser **idêntico** ao formato de export — exportou um JSON, importa o mesmo JSON de volta sem modificação
 - **Streaming em exports**: usar `yield_per(500)` + geradores para não carregar todos os dados na memória. Sem `Content-Length` — o download começa imediatamente
-- **Import paginado**: arquivos grandes (>4.5MB) devem ser divididos em chunks pelo frontend (limite do Vercel)
+- **Import paginado obrigatório**: toda US deve ter endpoint `/import-chunk` para arquivos grandes (limite Vercel 4.5MB). O frontend divide o array em batches (2000 itens/batch) e envia sequencialmente com progresso. Mesmo que na prática os dados pós-limpeza sejam menores, a infraestrutura de chunking deve existir para consistência
 - **Tabs na UI**: toda página de US que possui import deve ter abas separadas ("Criar via ..." / "Importar JSON"), seguindo o padrão da CollectPage
 - **Resolução por video_id**: o import de etapas posteriores (US-03+) localiza a coleta pelo `video_id` do JSON — sem exigir seleção manual
 
