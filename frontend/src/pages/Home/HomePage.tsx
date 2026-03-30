@@ -170,7 +170,7 @@ const PIPELINE_STAGES: StageCard[] = [
       "Resolva classificações divergentes entre anotadores. Toda divergência exige decisão explícita.",
     route: "/review",
     adminOnly: true,
-    available: false,
+    available: true,
     icon: <IconCheckCircle />,
   },
   {
