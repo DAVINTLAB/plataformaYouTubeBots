@@ -36,9 +36,7 @@ router = APIRouter(prefix="/clean", tags=["clean"])
 @router.get("/preview", response_model=PreviewResponse)
 def preview_endpoint(
     collection_id: uuid.UUID,
-    criteria: str = Query(
-        ..., description="Critérios separados por vírgula"
-    ),
+    criteria: str = Query(..., description="Critérios separados por vírgula"),
     threshold_chars: int = Query(default=20, ge=1, le=500),
     threshold_seconds: int = Query(default=30, ge=1, le=3600),
     db: Session = Depends(get_db),
@@ -71,9 +69,9 @@ def create_dataset_endpoint(
         payload.thresholds.threshold_seconds,
         current_user.id,
     )
-    collection = db.query(Collection).filter(
-        Collection.id == dataset.collection_id
-    ).first()
+    collection = (
+        db.query(Collection).filter(Collection.id == dataset.collection_id).first()
+    )
     return DatasetResponse(
         dataset_id=dataset.id,
         name=dataset.name,
@@ -89,7 +87,9 @@ def create_dataset_endpoint(
 # ─── Import de dataset ────────────────────────────────────────────────────────
 
 
-@router.post("/import", status_code=status.HTTP_201_CREATED, response_model=DatasetResponse)
+@router.post(
+    "/import", status_code=status.HTTP_201_CREATED, response_model=DatasetResponse
+)
 def import_dataset_endpoint(
     payload: DatasetImport,
     db: Session = Depends(get_db),
@@ -103,9 +103,9 @@ def import_dataset_endpoint(
         payload.users,
         current_user.id,
     )
-    collection = db.query(Collection).filter(
-        Collection.id == dataset.collection_id
-    ).first()
+    collection = (
+        db.query(Collection).filter(Collection.id == dataset.collection_id).first()
+    )
     return DatasetResponse(
         dataset_id=dataset.id,
         name=dataset.name,
@@ -130,9 +130,9 @@ def list_datasets_endpoint(
     datasets = list_datasets(db, video_id)
     result = []
     for ds in datasets:
-        collection = db.query(Collection).filter(
-            Collection.id == ds.collection_id
-        ).first()
+        collection = (
+            db.query(Collection).filter(Collection.id == ds.collection_id).first()
+        )
         result.append(
             DatasetSummary(
                 dataset_id=ds.id,
@@ -168,9 +168,9 @@ def download_dataset_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     dataset = get_dataset_with_entries(db, dataset_id)
-    collection = db.query(Collection).filter(
-        Collection.id == dataset.collection_id
-    ).first()
+    collection = (
+        db.query(Collection).filter(Collection.id == dataset.collection_id).first()
+    )
 
     entry_channel_ids = [e.author_channel_id for e in dataset.entries]
 
@@ -186,6 +186,7 @@ def download_dataset_endpoint(
         )
 
     if fmt == "csv":
+
         def csv_stream():
             buf = io.StringIO()
             writer = csv.DictWriter(buf, fieldnames=_DATASET_CSV_FIELDS)
@@ -194,19 +195,21 @@ def download_dataset_endpoint(
             for c in _comments_iter():
                 buf = io.StringIO()
                 writer = csv.DictWriter(buf, fieldnames=_DATASET_CSV_FIELDS)
-                writer.writerow({
-                    "author_channel_id": c.author_channel_id or "",
-                    "author_display_name": c.author_display_name,
-                    "text_original": c.text_original,
-                    "like_count": c.like_count,
-                    "reply_count": c.reply_count,
-                    "published_at": c.published_at.isoformat(),
-                    "author_channel_published_at": (
-                        c.author_channel_published_at.isoformat()
-                        if c.author_channel_published_at
-                        else ""
-                    ),
-                })
+                writer.writerow(
+                    {
+                        "author_channel_id": c.author_channel_id or "",
+                        "author_display_name": c.author_display_name,
+                        "text_original": c.text_original,
+                        "like_count": c.like_count,
+                        "reply_count": c.reply_count,
+                        "published_at": c.published_at.isoformat(),
+                        "author_channel_published_at": (
+                            c.author_channel_published_at.isoformat()
+                            if c.author_channel_published_at
+                            else ""
+                        ),
+                    }
+                )
                 yield buf.getvalue()
 
         return StreamingResponse(
@@ -234,26 +237,29 @@ def download_dataset_endpoint(
             }
             for e in dataset.entries
         ]
-        yield '{\n  "dataset": ' + json.dumps(meta, ensure_ascii=False) + ',\n'
-        yield '  "users": ' + json.dumps(users, ensure_ascii=False, indent=4) + ',\n'
+        yield '{\n  "dataset": ' + json.dumps(meta, ensure_ascii=False) + ",\n"
+        yield '  "users": ' + json.dumps(users, ensure_ascii=False, indent=4) + ",\n"
         yield '  "comments": [\n'
         first = True
         for c in _comments_iter():
             prefix = "    " if first else ",\n    "
             first = False
-            yield prefix + json.dumps({
-                "author_channel_id": c.author_channel_id,
-                "author_display_name": c.author_display_name,
-                "text_original": c.text_original,
-                "like_count": c.like_count,
-                "reply_count": c.reply_count,
-                "published_at": c.published_at.isoformat(),
-                "author_channel_published_at": (
-                    c.author_channel_published_at.isoformat()
-                    if c.author_channel_published_at
-                    else None
-                ),
-            }, ensure_ascii=False)
+            yield prefix + json.dumps(
+                {
+                    "author_channel_id": c.author_channel_id,
+                    "author_display_name": c.author_display_name,
+                    "text_original": c.text_original,
+                    "like_count": c.like_count,
+                    "reply_count": c.reply_count,
+                    "published_at": c.published_at.isoformat(),
+                    "author_channel_published_at": (
+                        c.author_channel_published_at.isoformat()
+                        if c.author_channel_published_at
+                        else None
+                    ),
+                },
+                ensure_ascii=False,
+            )
         yield "\n  ]\n}\n"
 
     return StreamingResponse(

@@ -69,9 +69,7 @@ def upgrade() -> None:
             sa.ARRAY(sa.String()),
             nullable=False,
         ),
-        sa.UniqueConstraint(
-            "dataset_id", "author_channel_id", name="uq_dataset_user"
-        ),
+        sa.UniqueConstraint("dataset_id", "author_channel_id", name="uq_dataset_user"),
     )
 
 

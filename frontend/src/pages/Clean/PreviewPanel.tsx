@@ -81,18 +81,14 @@ export function PreviewPanel({ preview, datasetName, selectedCriteria }: Preview
             <span className="text-xs font-semibold text-davint-600">
               Total combinado (qualquer critério)
             </span>
-            <span className="text-lg font-bold text-davint-600">
-              {union_if_combined}
-            </span>
+            <span className="text-lg font-bold text-davint-600">{union_if_combined}</span>
           </div>
         </div>
       )}
 
       {/* Nome do dataset */}
       <div className="border-t border-gray-100 pt-3">
-        <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">
-          Nome do dataset
-        </p>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Nome do dataset</p>
         <p className="text-sm font-mono font-semibold text-gray-800 bg-gray-50 rounded px-3 py-2">
           {datasetName || "—"}
         </p>

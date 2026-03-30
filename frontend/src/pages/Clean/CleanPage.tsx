@@ -10,8 +10,14 @@ import { DatasetList } from "./DatasetList";
 import { PreviewPanel } from "./PreviewPanel";
 
 const CRITERIA_ORDER = [
-  "percentil", "media", "moda", "mediana",
-  "curtos", "intervalo", "identicos", "perfil",
+  "percentil",
+  "media",
+  "moda",
+  "mediana",
+  "curtos",
+  "intervalo",
+  "identicos",
+  "perfil",
 ];
 
 function buildDatasetName(videoId: string, criteria: string[]): string {
@@ -75,10 +81,7 @@ export function CleanPage() {
     [selectedCriteria]
   );
   const datasetName = useMemo(
-    () =>
-      selectedCollection
-        ? buildDatasetName(selectedCollection.video_id, criteriaArray)
-        : "",
+    () => (selectedCollection ? buildDatasetName(selectedCollection.video_id, criteriaArray) : ""),
     [selectedCollection, criteriaArray]
   );
 
@@ -99,11 +102,10 @@ export function CleanPage() {
   const handlePreview = useCallback(() => {
     if (!selectedCollectionId || criteriaArray.length === 0) return;
     clearError();
-    fetchPreview(
-      selectedCollectionId,
-      criteriaArray,
-      { threshold_chars: thresholdChars, threshold_seconds: thresholdSeconds },
-    );
+    fetchPreview(selectedCollectionId, criteriaArray, {
+      threshold_chars: thresholdChars,
+      threshold_seconds: thresholdSeconds,
+    });
   }, [
     selectedCollectionId,
     criteriaArray,
@@ -164,15 +166,11 @@ export function CleanPage() {
             }>;
           };
           if (!parsed.dataset?.name || !parsed.dataset?.video_id) {
-            setImportParseError(
-              'O arquivo deve conter "dataset" com "name" e "video_id".'
-            );
+            setImportParseError('O arquivo deve conter "dataset" com "name" e "video_id".');
             return;
           }
           if (!Array.isArray(parsed.users) || parsed.users.length === 0) {
-            setImportParseError(
-              'O arquivo deve conter "users" (array não vazio).'
-            );
+            setImportParseError('O arquivo deve conter "users" (array não vazio).');
             return;
           }
           void (async () => {
@@ -210,9 +208,7 @@ export function CleanPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <PageHeader
-        breadcrumbs={[{ label: "Início", to: "/" }, { label: "Limpeza e Seleção" }]}
-      />
+      <PageHeader breadcrumbs={[{ label: "Início", to: "/" }, { label: "Limpeza e Seleção" }]} />
 
       <main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">
         <h1 className="text-2xl font-bold text-gray-800 tracking-tight mb-1">
@@ -226,10 +222,7 @@ export function CleanPage() {
         {error && (
           <div className="alert alert-error mb-4">
             {error}
-            <button
-              className="ml-2 text-xs font-semibold underline"
-              onClick={clearError}
-            >
+            <button className="ml-2 text-xs font-semibold underline" onClick={clearError}>
               Fechar
             </button>
           </div>
@@ -340,10 +333,7 @@ export function CleanPage() {
 
                 {selectedCollectionId && (
                   <>
-                    <CriteriaGroup1
-                      selected={selectedCriteria}
-                      onToggle={toggleCriteria}
-                    />
+                    <CriteriaGroup1 selected={selectedCriteria} onToggle={toggleCriteria} />
                     <CriteriaGroup2
                       selected={selectedCriteria}
                       onToggle={toggleCriteria}
@@ -407,8 +397,15 @@ export function CleanPage() {
                 <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">
                   dataset
                 </code>{" "}
-                (com <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">name</code> e{" "}
-                <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">video_id</code>) e{" "}
+                (com{" "}
+                <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">
+                  name
+                </code>{" "}
+                e{" "}
+                <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">
+                  video_id
+                </code>
+                ) e{" "}
                 <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">
                   users
                 </code>{" "}

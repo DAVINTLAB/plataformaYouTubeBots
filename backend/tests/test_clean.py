@@ -4,9 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from models.collection import Collection, Comment
-from models.dataset import Dataset
 from services.clean.base import SelectorBase
-from services.clean.identical import IdenticalSelector
 from services.clean.mean import MeanSelector
 from services.clean.median import MedianSelector
 from services.clean.mode import ModeSelector
@@ -15,7 +13,6 @@ from services.clean.service import build_dataset_name, group_by_user
 from services.clean.short_comments import ShortCommentsSelector
 from services.clean.stats import compute_central_measures, remove_outliers_iqr
 from services.clean.time_interval import TimeIntervalSelector
-
 
 # ---------------------------------------------------------------------------
 # Helpers — Dummy comment factory
@@ -102,11 +99,19 @@ class TestBuildDatasetName:
 
     def test_todos_criterios(self):
         all_criteria = [
-            "perfil", "identicos", "curtos", "mediana",
-            "moda", "media", "percentil", "intervalo",
+            "perfil",
+            "identicos",
+            "curtos",
+            "mediana",
+            "moda",
+            "media",
+            "percentil",
+            "intervalo",
         ]
         name = build_dataset_name("v1", all_criteria)
-        assert name == "v1_percentil_media_moda_mediana_curtos_intervalo_identicos_perfil"
+        assert (
+            name == "v1_percentil_media_moda_mediana_curtos_intervalo_identicos_perfil"
+        )
 
 
 class TestRemoveOutliersIQR:
@@ -146,9 +151,7 @@ class TestComputeCentralMeasures:
 class TestPercentileSelector:
     def test_seleciona_top_30_por_volume(self):
         # 10 usuários: A=10, B=9, ..., J=1
-        comments = _make_comments(
-            {chr(65 + i): 10 - i for i in range(10)}
-        )
+        comments = _make_comments({chr(65 + i): 10 - i for i in range(10)})
         groups = group_by_user(comments)
         selector = PercentileSelector(top_percent=0.30)
         selected = selector.select(groups)
@@ -169,9 +172,7 @@ class TestPercentileSelector:
 class TestMeanSelector:
     def test_outlier_nao_distorce_threshold(self):
         # Usuários com 1,1,1,1,1000 — outlier não deve inflar a média
-        comments = _make_comments(
-            {"A": 1, "B": 1, "C": 1, "D": 1, "E": 1000}
-        )
+        comments = _make_comments({"A": 1, "B": 1, "C": 1, "D": 1, "E": 1000})
         groups = group_by_user(comments)
         selected = MeanSelector().select(groups)
 
@@ -190,9 +191,7 @@ class TestMeanSelector:
 
 class TestMedianSelector:
     def test_seleciona_acima_da_mediana(self):
-        comments = _make_comments(
-            {"A": 10, "B": 5, "C": 2, "D": 1, "E": 1}
-        )
+        comments = _make_comments({"A": 10, "B": 5, "C": 2, "D": 1, "E": 1})
         groups = group_by_user(comments)
         selected = MedianSelector().select(groups)
         assert "A" in selected
@@ -205,9 +204,7 @@ class TestMedianSelector:
 class TestModeSelector:
     def test_seleciona_acima_da_moda(self):
         # Moda = 1 (maioria tem 1 comentário)
-        comments = _make_comments(
-            {"A": 5, "B": 1, "C": 1, "D": 1, "E": 1}
-        )
+        comments = _make_comments({"A": 5, "B": 1, "C": 1, "D": 1, "E": 1})
         groups = group_by_user(comments)
         selected = ModeSelector().select(groups)
         assert "A" in selected
@@ -223,9 +220,7 @@ class TestShortCommentsSelector:
                 return "hi"  # 2 chars, abaixo de 20
             return f"este é um comentário mais longo número {i}"
 
-        comments = _make_comments(
-            {"A": 5, "B": 5}, text_factory=text_fn
-        )
+        comments = _make_comments({"A": 5, "B": 5}, text_factory=text_fn)
         groups = group_by_user(comments)
         selected = ShortCommentsSelector(threshold_chars=20).select(groups)
         assert "A" in selected
@@ -237,9 +232,7 @@ class TestShortCommentsSelector:
                 return "spam repetido exatamente igual"
             return f"comentário único número {i}"
 
-        comments = _make_comments(
-            {"A": 5, "B": 5}, text_factory=text_fn
-        )
+        comments = _make_comments({"A": 5, "B": 5}, text_factory=text_fn)
         groups = group_by_user(comments)
         selected = ShortCommentsSelector(threshold_chars=5).select(groups)
         # A tem 100% repetição (>0.5), mas caracteres não são curtos
@@ -257,9 +250,7 @@ class TestTimeIntervalSelector:
                 return datetime(2024, 1, 1, 12, 0, 0) + timedelta(seconds=5 * i)
             return datetime(2024, 1, 1, 12, 0, 0) + timedelta(hours=i)
 
-        comments = _make_comments(
-            {"A": 3, "B": 3}, published_at_factory=pub_fn
-        )
+        comments = _make_comments({"A": 3, "B": 3}, published_at_factory=pub_fn)
         groups = group_by_user(comments)
         selected = TimeIntervalSelector(threshold_seconds=30).select(groups)
         assert "A" in selected
@@ -293,8 +284,16 @@ class TestUniaoCriterios:
         # A e B postam em rajada, C não
         comments = _make_comments(
             {
-                "A": 10, "B": 8, "C": 6,
-                "D": 2, "E": 1, "F": 1, "G": 1, "H": 1, "I": 1, "J": 1,
+                "A": 10,
+                "B": 8,
+                "C": 6,
+                "D": 2,
+                "E": 1,
+                "F": 1,
+                "G": 1,
+                "H": 1,
+                "I": 1,
+                "J": 1,
             },
             published_at_factory=pub_fn,
         )
@@ -401,9 +400,7 @@ class TestPreviewEndpoint:
         )
         assert resp.status_code == 409
 
-    def test_preview_coleta_inexistente_retorna_404(
-        self, client, auth_as_user
-    ):
+    def test_preview_coleta_inexistente_retorna_404(self, client, auth_as_user):
         resp = client.get(
             "/clean/preview",
             params={
@@ -415,9 +412,7 @@ class TestPreviewEndpoint:
 
 
 class TestCreateDatasetEndpoint:
-    def test_cria_dataset_com_sucesso(
-        self, client, auth_as_user, completed_collection
-    ):
+    def test_cria_dataset_com_sucesso(self, client, auth_as_user, completed_collection):
         resp = client.post(
             "/clean",
             json={
@@ -450,9 +445,7 @@ class TestCreateDatasetEndpoint:
         )
         assert resp.status_code == 409
 
-    def test_sem_criterio_retorna_422(
-        self, client, auth_as_user, completed_collection
-    ):
+    def test_sem_criterio_retorna_422(self, client, auth_as_user, completed_collection):
         resp = client.post(
             "/clean",
             json={
@@ -509,9 +502,7 @@ class TestCreateDatasetEndpoint:
 
 
 class TestListDatasetsEndpoint:
-    def test_lista_datasets(
-        self, client, auth_as_user, completed_collection
-    ):
+    def test_lista_datasets(self, client, auth_as_user, completed_collection):
         # Criar um dataset primeiro
         client.post(
             "/clean",
@@ -552,9 +543,7 @@ class TestListDatasetsEndpoint:
 
 
 class TestDownloadDatasetEndpoint:
-    def test_download_json(
-        self, client, auth_as_user, completed_collection
-    ):
+    def test_download_json(self, client, auth_as_user, completed_collection):
         create_resp = client.post(
             "/clean",
             json={
@@ -575,9 +564,7 @@ class TestDownloadDatasetEndpoint:
         assert "users" in data
         assert "comments" in data
 
-    def test_download_csv(
-        self, client, auth_as_user, completed_collection
-    ):
+    def test_download_csv(self, client, auth_as_user, completed_collection):
         create_resp = client.post(
             "/clean",
             json={
@@ -594,9 +581,7 @@ class TestDownloadDatasetEndpoint:
         assert resp.status_code == 200
         assert "text/csv" in resp.headers["content-type"]
 
-    def test_download_dataset_inexistente_retorna_404(
-        self, client, auth_as_user
-    ):
+    def test_download_dataset_inexistente_retorna_404(self, client, auth_as_user):
         resp = client.get(
             f"/clean/datasets/{uuid.uuid4()}/download",
             params={"format": "json"},
@@ -605,9 +590,7 @@ class TestDownloadDatasetEndpoint:
 
 
 class TestDeleteDatasetEndpoint:
-    def test_deleta_dataset(
-        self, client, auth_as_user, completed_collection
-    ):
+    def test_deleta_dataset(self, client, auth_as_user, completed_collection):
         create_resp = client.post(
             "/clean",
             json={
@@ -627,8 +610,6 @@ class TestDeleteDatasetEndpoint:
         )
         assert resp2.status_code == 404
 
-    def test_deleta_dataset_inexistente_retorna_404(
-        self, client, auth_as_user
-    ):
+    def test_deleta_dataset_inexistente_retorna_404(self, client, auth_as_user):
         resp = client.delete(f"/clean/datasets/{uuid.uuid4()}")
         assert resp.status_code == 404

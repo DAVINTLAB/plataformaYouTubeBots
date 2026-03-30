@@ -21,21 +21,14 @@ from .stats import remove_outliers_iqr
 class CentralMeasureSelector(SelectorBase):
     """Template Method: subclasses só implementam _compute_threshold."""
 
-    def select(
-        self, user_comments: dict[str, list[Comment]]
-    ) -> set[str]:
+    def select(self, user_comments: dict[str, list[Comment]]) -> set[str]:
         user_counts = {uid: len(cs) for uid, cs in user_comments.items()}
         if not user_counts:
             return set()
 
-        clean_counts = remove_outliers_iqr(
-            [float(c) for c in user_counts.values()]
-        )
+        clean_counts = remove_outliers_iqr([float(c) for c in user_counts.values()])
         threshold = self._compute_threshold(clean_counts)
-        return {
-            uid for uid, count in user_counts.items() if count > threshold
-        }
+        return {uid for uid, count in user_counts.items() if count > threshold}
 
     @abstractmethod
-    def _compute_threshold(self, clean_counts: list[float]) -> float:
-        ...
+    def _compute_threshold(self, clean_counts: list[float]) -> float: ...

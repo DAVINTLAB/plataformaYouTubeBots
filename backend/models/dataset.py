@@ -14,9 +14,7 @@ class Dataset(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     collection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collections.id"))
-    criteria_applied: Mapped[list[str]] = mapped_column(
-        ARRAY(String), nullable=False
-    )
+    criteria_applied: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
     thresholds: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     total_users_original: Mapped[int] = mapped_column(Integer, nullable=False)
     total_users_selected: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -39,14 +37,10 @@ class DatasetEntry(Base):
     author_channel_id: Mapped[str] = mapped_column(String(64), nullable=False)
     author_display_name: Mapped[str] = mapped_column(String(256))
     comment_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    matched_criteria: Mapped[list[str]] = mapped_column(
-        ARRAY(String), nullable=False
-    )
+    matched_criteria: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
 
     dataset: Mapped["Dataset"] = relationship(back_populates="entries")
 
     __table_args__ = (
-        UniqueConstraint(
-            "dataset_id", "author_channel_id", name="uq_dataset_user"
-        ),
+        UniqueConstraint("dataset_id", "author_channel_id", name="uq_dataset_user"),
     )

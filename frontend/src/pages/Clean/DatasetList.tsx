@@ -8,9 +8,7 @@ interface DatasetListProps {
 
 export function DatasetList({ datasets, onDownload, onDelete }: DatasetListProps) {
   if (datasets.length === 0) {
-    return (
-      <p className="text-sm text-gray-400 italic px-6 py-4">Nenhum dataset criado ainda.</p>
-    );
+    return <p className="text-sm text-gray-400 italic px-6 py-4">Nenhum dataset criado ainda.</p>;
   }
 
   return (
@@ -42,12 +40,8 @@ export function DatasetList({ datasets, onDownload, onDelete }: DatasetListProps
               <td className="py-3 pl-6 pr-4 font-mono text-sm text-gray-800 font-medium">
                 {ds.name}
               </td>
-              <td className="py-3 pr-4 text-sm text-gray-600">
-                {ds.criteria_applied.join(", ")}
-              </td>
-              <td className="py-3 pr-4 text-sm text-gray-600">
-                {ds.total_users_selected}
-              </td>
+              <td className="py-3 pr-4 text-sm text-gray-600">{ds.criteria_applied.join(", ")}</td>
+              <td className="py-3 pr-4 text-sm text-gray-600">{ds.total_users_selected}</td>
               <td className="py-3 pr-4 text-sm text-gray-500">
                 {new Date(ds.created_at).toLocaleDateString("pt-BR")}
               </td>

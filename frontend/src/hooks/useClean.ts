@@ -38,7 +38,7 @@ export function useClean() {
     async (
       collectionId: string,
       criteria: string[],
-      thresholds: { threshold_chars: number; threshold_seconds: number },
+      thresholds: { threshold_chars: number; threshold_seconds: number }
     ) => {
       if (!token || criteria.length === 0) return;
       setState((s) => ({ ...s, loading: true, error: null }));

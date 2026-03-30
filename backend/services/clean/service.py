@@ -47,23 +47,23 @@ def group_by_user(
 def build_dataset_name(video_id: str, criteria: list[str]) -> str:
     """Gera nome canônico: {video_id}_{critérios em ordem fixa}."""
     order = [
-        "percentil", "media", "moda", "mediana",
-        "curtos", "intervalo", "identicos", "perfil",
+        "percentil",
+        "media",
+        "moda",
+        "mediana",
+        "curtos",
+        "intervalo",
+        "identicos",
+        "perfil",
     ]
     active = [c for c in order if c in criteria]
     return f"{video_id}_{'_'.join(active)}"
 
 
-def _get_completed_collection(
-    db: Session, collection_id: uuid.UUID
-) -> Collection:
-    collection = (
-        db.query(Collection).filter(Collection.id == collection_id).first()
-    )
+def _get_completed_collection(db: Session, collection_id: uuid.UUID) -> Collection:
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
     if collection is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada."
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
     if collection.status != "completed":
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -113,11 +113,7 @@ def preview(
     threshold_seconds: int = 30,
 ) -> dict:
     collection = _get_completed_collection(db, collection_id)
-    comments = (
-        db.query(Comment)
-        .filter(Comment.collection_id == collection.id)
-        .all()
-    )
+    comments = db.query(Comment).filter(Comment.collection_id == collection.id).all()
     user_comments = group_by_user(
         comments, exclude_channel_id=collection.video_channel_id
     )
@@ -173,20 +169,14 @@ def create_dataset(
 
     dataset_name = build_dataset_name(collection.video_id, criteria)
 
-    existing = (
-        db.query(Dataset).filter(Dataset.name == dataset_name).first()
-    )
+    existing = db.query(Dataset).filter(Dataset.name == dataset_name).first()
     if existing:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="Já existe um dataset com esses critérios para este vídeo.",
         )
 
-    comments = (
-        db.query(Comment)
-        .filter(Comment.collection_id == collection.id)
-        .all()
-    )
+    comments = db.query(Comment).filter(Comment.collection_id == collection.id).all()
     user_comments = group_by_user(
         comments, exclude_channel_id=collection.video_channel_id
     )
@@ -259,9 +249,7 @@ def create_dataset(
     return dataset
 
 
-def _get_display_name(
-    user_comments: dict[str, list[Comment]], uid: str
-) -> str:
+def _get_display_name(user_comments: dict[str, list[Comment]], uid: str) -> str:
     comments = user_comments.get(uid, [])
     return comments[0].author_display_name if comments else uid
 
@@ -342,9 +330,9 @@ def import_dataset(
     db.refresh(dataset)
 
     logger.info(
-        "Dataset importado: name=%s, collection_id=%s, users=%d",
+        "Dataset importado: name=%s, video_id=%s, users=%d",
         dataset.name,
-        collection_id,
+        video_id,
         len(users),
     )
     return dataset
@@ -353,33 +341,23 @@ def import_dataset(
 # ─── Listagem e download ────────────────────────────────────────────────────
 
 
-def list_datasets(
-    db: Session, video_id: str | None = None
-) -> list[Dataset]:
+def list_datasets(db: Session, video_id: str | None = None) -> list[Dataset]:
     query = db.query(Dataset)
     if video_id:
-        query = query.join(Collection).filter(
-            Collection.video_id == video_id
-        )
+        query = query.join(Collection).filter(Collection.video_id == video_id)
     return query.order_by(Dataset.created_at.desc()).all()
 
 
-def get_dataset_with_entries(
-    db: Session, dataset_id: uuid.UUID
-) -> Dataset:
+def get_dataset_with_entries(db: Session, dataset_id: uuid.UUID) -> Dataset:
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if dataset is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail="Dataset não encontrado."
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Dataset não encontrado.")
     return dataset
 
 
 def delete_dataset(db: Session, dataset_id: uuid.UUID) -> None:
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if dataset is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail="Dataset não encontrado."
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Dataset não encontrado.")
     db.delete(dataset)
     db.commit()

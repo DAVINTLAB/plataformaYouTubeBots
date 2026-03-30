@@ -16,9 +16,7 @@ class IdenticalSelector(SelectorBase):
         self.db = db
         self.collection_id = collection_id
 
-    def select(
-        self, user_comments: dict[str, list[Comment]]
-    ) -> set[str]:
+    def select(self, user_comments: dict[str, list[Comment]]) -> set[str]:
         if not user_comments:
             return set()
 
@@ -39,9 +37,7 @@ class IdenticalSelector(SelectorBase):
                 .all()
             )
 
-            other_texts = {
-                r.text_original.strip().lower() for r in other_comments
-            }
+            other_texts = {r.text_original.strip().lower() for r in other_comments}
             if texts & other_texts:
                 suspicious.add(uid)
 

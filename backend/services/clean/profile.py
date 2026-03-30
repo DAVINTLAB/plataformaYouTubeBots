@@ -21,9 +21,7 @@ class ProfileSelector(SelectorBase):
     Usa author_profile_image_url e author_channel_published_at da coleta.
     """
 
-    def select(
-        self, user_comments: dict[str, list[Comment]]
-    ) -> set[str]:
+    def select(self, user_comments: dict[str, list[Comment]]) -> set[str]:
         if not user_comments:
             return set()
 

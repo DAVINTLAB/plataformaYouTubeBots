@@ -68,8 +68,7 @@ export const cleanApi = {
     const qs = new URLSearchParams();
     qs.set("collection_id", params.collection_id);
     qs.set("criteria", params.criteria);
-    if (params.threshold_chars != null)
-      qs.set("threshold_chars", String(params.threshold_chars));
+    if (params.threshold_chars != null) qs.set("threshold_chars", String(params.threshold_chars));
     if (params.threshold_seconds != null)
       qs.set("threshold_seconds", String(params.threshold_seconds));
 
@@ -90,10 +89,9 @@ export const cleanApi = {
     token: string,
     datasetName: string
   ): Promise<void> => {
-    const res = await fetch(
-      `${API_URL}/clean/datasets/${datasetId}/download?format=${format}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const res = await fetch(`${API_URL}/clean/datasets/${datasetId}/download?format=${format}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { detail?: string };
       throw new ApiError(body.detail ?? "Erro ao baixar dataset.", res.status);
@@ -122,5 +120,9 @@ export const cleanApi = {
     },
     token: string
   ) =>
-    request<DatasetResponse>("/clean/import", { method: "POST", body: JSON.stringify(data) }, token),
+    request<DatasetResponse>(
+      "/clean/import",
+      { method: "POST", body: JSON.stringify(data) },
+      token
+    ),
 };

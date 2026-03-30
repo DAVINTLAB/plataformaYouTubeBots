@@ -4,10 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 VALID_CRITERIA = Literal[
-    "percentil", "media", "moda", "mediana",
-    "curtos", "intervalo", "identicos", "perfil",
+    "percentil",
+    "media",
+    "moda",
+    "mediana",
+    "curtos",
+    "intervalo",
+    "identicos",
+    "perfil",
 ]
 
 

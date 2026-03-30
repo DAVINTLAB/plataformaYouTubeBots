@@ -11,20 +11,17 @@ const CRITERIA = [
   {
     id: "curtos",
     label: "Comentários curtos/repetitivos",
-    description:
-      "Usuários com maioria de comentários curtos ou com alto índice de repetição.",
+    description: "Usuários com maioria de comentários curtos ou com alto índice de repetição.",
   },
   {
     id: "intervalo",
     label: "Intervalo temporal (rajada)",
-    description:
-      "Usuários que postaram comentários consecutivos em intervalo muito curto.",
+    description: "Usuários que postaram comentários consecutivos em intervalo muito curto.",
   },
   {
     id: "identicos",
     label: "Idênticos em múltiplos vídeos",
-    description:
-      "Usuários que postaram comentários iguais em coletas diferentes no banco.",
+    description: "Usuários que postaram comentários iguais em coletas diferentes no banco.",
   },
   {
     id: "perfil",
@@ -95,7 +92,6 @@ export function CriteriaGroup2({
                 </label>
               </div>
             )}
-
           </div>
         ))}
       </div>

@@ -11,7 +11,4 @@ class SelectorBase(ABC):
     """
 
     @abstractmethod
-    def select(
-        self, user_comments: dict[str, list[Comment]]
-    ) -> set[str]:
-        ...
+    def select(self, user_comments: dict[str, list[Comment]]) -> set[str]: ...

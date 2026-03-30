@@ -238,6 +238,7 @@ def export_endpoint(
     video_id = collection.video_id
 
     if fmt == "csv":
+
         def csv_stream():
             output = io.StringIO()
             writer = csv.DictWriter(output, fieldnames=_CSV_FIELDS)
@@ -275,15 +276,13 @@ def export_endpoint(
             "like_count": collection.video_like_count,
             "comment_count": collection.video_comment_count,
         }
-        yield '{\n  "video": ' + json.dumps(video, ensure_ascii=False) + ',\n'
+        yield '{\n  "video": ' + json.dumps(video, ensure_ascii=False) + ",\n"
         yield '  "comments": [\n'
         first = True
         for c in export_comments_iter(db, collection_id):
             prefix = "    " if first else ",\n    "
             first = False
-            yield prefix + json.dumps(
-                _comment_to_json_dict(c), ensure_ascii=False
-            )
+            yield prefix + json.dumps(_comment_to_json_dict(c), ensure_ascii=False)
         yield "\n  ]\n}\n"
 
     return StreamingResponse(

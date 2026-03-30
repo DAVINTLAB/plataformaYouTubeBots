@@ -12,17 +12,20 @@ const CRITERIA = [
   {
     id: "media",
     label: "Acima da média",
-    description: "Seleciona usuários com número de comentários acima da média (após remoção de outliers via IQR).",
+    description:
+      "Seleciona usuários com número de comentários acima da média (após remoção de outliers via IQR).",
   },
   {
     id: "moda",
     label: "Acima da moda",
-    description: "Seleciona usuários com número de comentários acima da moda (após remoção de outliers via IQR).",
+    description:
+      "Seleciona usuários com número de comentários acima da moda (após remoção de outliers via IQR).",
   },
   {
     id: "mediana",
     label: "Acima da mediana",
-    description: "Seleciona usuários com número de comentários acima da mediana (após remoção de outliers via IQR).",
+    description:
+      "Seleciona usuários com número de comentários acima da mediana (após remoção de outliers via IQR).",
   },
 ];
 
