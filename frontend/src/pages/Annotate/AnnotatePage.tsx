@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { cleanApi, DatasetSummary } from "../../api/clean";
 import { PageHeader } from "../../components/PageHeader";
 import { ProgressBar } from "../../components/ProgressBar";
@@ -17,7 +17,7 @@ export function AnnotatePage() {
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [toast, setToast] = useState<string | null>(null);
-  const [usersPage, setUsersPage] = useState(0);
+  const [usersPage, setUsersPage] = useState(1);
   const USERS_PER_PAGE = 20;
 
   const {
@@ -62,12 +62,22 @@ export function AnnotatePage() {
   const handleSelectDataset = useCallback(
     (id: string) => {
       setSelectedDatasetId(id);
-      setUsersPage(0);
+      setUsersPage(1);
       if (id) {
-        fetchDatasetUsers(id);
+        fetchDatasetUsers(id, 1, USERS_PER_PAGE);
       }
     },
     [fetchDatasetUsers]
+  );
+
+  const handlePageChange = useCallback(
+    (newPage: number) => {
+      setUsersPage(newPage);
+      if (selectedDatasetId) {
+        fetchDatasetUsers(selectedDatasetId, newPage, USERS_PER_PAGE);
+      }
+    },
+    [selectedDatasetId, fetchDatasetUsers]
   );
 
   const handleSelectUser = useCallback(
@@ -92,9 +102,9 @@ export function AnnotatePage() {
 
   const handleBackToUsers = useCallback(() => {
     if (selectedDatasetId) {
-      fetchDatasetUsers(selectedDatasetId);
+      fetchDatasetUsers(selectedDatasetId, usersPage, USERS_PER_PAGE);
     }
-  }, [selectedDatasetId, fetchDatasetUsers]);
+  }, [selectedDatasetId, usersPage, fetchDatasetUsers]);
 
   const handleImport = useCallback(
     (e: FormEvent) => {
@@ -142,12 +152,7 @@ export function AnnotatePage() {
   const datasetProgress = progress.find((p) => p.dataset_id === selectedDatasetId);
   const globalPercent = datasetProgress ? datasetProgress.percent_complete : 0;
 
-  const totalUsersPages = datasetUsers ? Math.ceil(datasetUsers.items.length / USERS_PER_PAGE) : 0;
-  const paginatedUsers = useMemo(() => {
-    if (!datasetUsers) return [];
-    const start = usersPage * USERS_PER_PAGE;
-    return datasetUsers.items.slice(start, start + USERS_PER_PAGE);
-  }, [datasetUsers, usersPage]);
+  const totalUsersPages = datasetUsers?.total_pages ?? 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -388,7 +393,7 @@ export function AnnotatePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {paginatedUsers.map((item) => {
+                        {datasetUsers.items.map((item) => {
                           const pct =
                             item.comment_count > 0
                               ? Math.round((item.my_annotated_count / item.comment_count) * 100)
@@ -439,22 +444,22 @@ export function AnnotatePage() {
                     {totalUsersPages > 1 && (
                       <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
                         <span className="text-xs text-gray-500">
-                          {usersPage * USERS_PER_PAGE + 1}–
-                          {Math.min((usersPage + 1) * USERS_PER_PAGE, datasetUsers.items.length)} de{" "}
-                          {datasetUsers.items.length} usuários
+                          {(usersPage - 1) * USERS_PER_PAGE + 1}–
+                          {Math.min(usersPage * USERS_PER_PAGE, datasetUsers.total_users)} de{" "}
+                          {datasetUsers.total_users} usuários
                         </span>
                         <div className="flex gap-1.5">
                           <button
                             className="btn btn-ghost btn-sm"
-                            disabled={usersPage === 0}
-                            onClick={() => setUsersPage((p) => p - 1)}
+                            disabled={usersPage <= 1}
+                            onClick={() => handlePageChange(usersPage - 1)}
                           >
                             Anterior
                           </button>
                           <button
                             className="btn btn-ghost btn-sm"
-                            disabled={usersPage >= totalUsersPages - 1}
-                            onClick={() => setUsersPage((p) => p + 1)}
+                            disabled={usersPage >= totalUsersPages}
+                            onClick={() => handlePageChange(usersPage + 1)}
                           >
                             Próxima
                           </button>

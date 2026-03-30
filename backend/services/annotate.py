@@ -27,74 +27,156 @@ def list_dataset_users(
     annotator_id: uuid.UUID,
     *,
     is_admin: bool = False,
+    page: int = 1,
+    page_size: int = 20,
 ) -> dict:
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if dataset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Dataset não encontrado.")
 
-    entries = db.query(DatasetEntry).filter(DatasetEntry.dataset_id == dataset_id).all()
-
     collection_id = dataset.collection_id
-    total_annotated = 0
-    total_comments = 0
+
+    # Total de entries (1 query COUNT, sem carregar objetos)
+    total_users = (
+        db.query(func.count(DatasetEntry.id))
+        .filter(DatasetEntry.dataset_id == dataset_id)
+        .scalar()
+    )
+
+    # Página de entries (LIMIT/OFFSET no banco)
+    offset = (page - 1) * page_size
+    entries = (
+        db.query(DatasetEntry)
+        .filter(DatasetEntry.dataset_id == dataset_id)
+        .order_by(DatasetEntry.author_display_name)
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
+
+    page_author_ids = [e.author_channel_id for e in entries]
+
+    # Totais globais (todos os autores do dataset, não só da página)
+    all_author_ids_sub = (
+        db.query(DatasetEntry.author_channel_id)
+        .filter(DatasetEntry.dataset_id == dataset_id)
+        .subquery()
+    )
+
+    total_comments = (
+        db.query(func.count(Comment.id))
+        .filter(
+            Comment.collection_id == collection_id,
+            Comment.author_channel_id.in_(all_author_ids_sub.select()),
+        )
+        .scalar()
+    ) or 0
+
+    if is_admin:
+        total_annotated = (
+            db.query(func.count(func.distinct(Annotation.comment_id)))
+            .join(Comment, Annotation.comment_id == Comment.id)
+            .filter(
+                Comment.collection_id == collection_id,
+                Comment.author_channel_id.in_(all_author_ids_sub.select()),
+            )
+            .scalar()
+        ) or 0
+    else:
+        total_annotated = (
+            db.query(func.count(Annotation.id))
+            .join(Comment, Annotation.comment_id == Comment.id)
+            .filter(
+                Comment.collection_id == collection_id,
+                Comment.author_channel_id.in_(all_author_ids_sub.select()),
+                Annotation.annotator_id == annotator_id,
+            )
+            .scalar()
+        ) or 0
+
+    if not page_author_ids:
+        return {
+            "dataset_id": dataset.id,
+            "dataset_name": dataset.name,
+            "total_users": total_users,
+            "total_comments": total_comments,
+            "annotated_comments_by_me": total_annotated,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": _total_pages(total_users, page_size),
+            "items": [],
+        }
+
+    # Contagens apenas para os autores da página
+    comment_counts = (
+        db.query(Comment.author_channel_id, func.count(Comment.id))
+        .filter(
+            Comment.collection_id == collection_id,
+            Comment.author_channel_id.in_(page_author_ids),
+        )
+        .group_by(Comment.author_channel_id)
+        .all()
+    )
+    counts_map = dict(comment_counts)
+
+    if is_admin:
+        ann_counts = (
+            db.query(
+                Comment.author_channel_id,
+                func.count(func.distinct(Annotation.comment_id)),
+            )
+            .join(Annotation, Annotation.comment_id == Comment.id)
+            .filter(
+                Comment.collection_id == collection_id,
+                Comment.author_channel_id.in_(page_author_ids),
+            )
+            .group_by(Comment.author_channel_id)
+            .all()
+        )
+    else:
+        ann_counts = (
+            db.query(Comment.author_channel_id, func.count(Annotation.id))
+            .join(Annotation, Annotation.comment_id == Comment.id)
+            .filter(
+                Comment.collection_id == collection_id,
+                Comment.author_channel_id.in_(page_author_ids),
+                Annotation.annotator_id == annotator_id,
+            )
+            .group_by(Comment.author_channel_id)
+            .all()
+        )
+    ann_map = dict(ann_counts)
 
     items = []
     for entry in entries:
-        comment_count = (
-            db.query(func.count(Comment.id))
-            .filter(
-                Comment.collection_id == collection_id,
-                Comment.author_channel_id == entry.author_channel_id,
-            )
-            .scalar()
-        )
-
-        if is_admin:
-            # Admin: comentários com pelo menos 1 anotação de qualquer pesquisador
-            annotated = (
-                db.query(func.count(func.distinct(Annotation.comment_id)))
-                .join(Comment, Annotation.comment_id == Comment.id)
-                .filter(
-                    Comment.collection_id == collection_id,
-                    Comment.author_channel_id == entry.author_channel_id,
-                )
-                .scalar()
-            )
-        else:
-            # Pesquisador: apenas as próprias anotações
-            annotated = (
-                db.query(func.count(Annotation.id))
-                .join(Comment, Annotation.comment_id == Comment.id)
-                .filter(
-                    Comment.collection_id == collection_id,
-                    Comment.author_channel_id == entry.author_channel_id,
-                    Annotation.annotator_id == annotator_id,
-                )
-                .scalar()
-            )
-
-        total_comments += comment_count
-        total_annotated += annotated
-
+        cc = counts_map.get(entry.author_channel_id, 0)
+        ac = ann_map.get(entry.author_channel_id, 0)
         items.append(
             {
                 "entry_id": entry.id,
                 "author_channel_id": entry.author_channel_id,
                 "author_display_name": entry.author_display_name,
-                "comment_count": comment_count,
-                "my_annotated_count": annotated,
-                "my_pending_count": comment_count - annotated,
+                "comment_count": cc,
+                "my_annotated_count": ac,
+                "my_pending_count": cc - ac,
             }
         )
 
     return {
         "dataset_id": dataset.id,
         "dataset_name": dataset.name,
-        "total_users": len(entries),
+        "total_users": total_users,
         "total_comments": total_comments,
         "annotated_comments_by_me": total_annotated,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": _total_pages(total_users, page_size),
         "items": items,
     }
+
+
+def _total_pages(total: int, page_size: int) -> int:
+    return max(1, (total + page_size - 1) // page_size)
 
 
 # ─── Comentários de um usuário (entry) ──────────────────────────────────────

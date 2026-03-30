@@ -113,6 +113,22 @@ class BotCommentItem(BaseModel):
     conflict_id: uuid.UUID | None
 
 
+class PaginatedConflicts(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: list[ConflictListItem]
+
+
+class PaginatedBots(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: list[BotCommentItem]
+
+
 class ReviewStats(BaseModel):
     total_conflicts: int
     pending_conflicts: int

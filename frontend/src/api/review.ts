@@ -74,6 +74,14 @@ export interface BotCommentItem {
   conflict_id: string | null;
 }
 
+export interface PaginatedResponse<T> {
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  items: T[];
+}
+
 export interface ReviewStats {
   total_conflicts: number;
   pending_conflicts: number;
@@ -92,14 +100,15 @@ export interface ImportResult {
 export const reviewApi = {
   listConflicts: (
     token: string,
-    params?: { status?: string; video_id?: string; dataset_id?: string }
+    params?: { status?: string; video_id?: string; dataset_id?: string; page?: number; page_size?: number }
   ) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.video_id) qs.set("video_id", params.video_id);
     if (params?.dataset_id) qs.set("dataset_id", params.dataset_id);
-    const query = qs.toString();
-    return request<ConflictListItem[]>(`/review/conflicts${query ? `?${query}` : ""}`, {}, token);
+    qs.set("page", String(params?.page ?? 1));
+    qs.set("page_size", String(params?.page_size ?? 20));
+    return request<PaginatedResponse<ConflictListItem>>(`/review/conflicts?${qs}`, {}, token);
   },
 
   getConflict: (conflictId: string, token: string) =>
@@ -115,12 +124,13 @@ export const reviewApi = {
       token
     ),
 
-  listBots: (token: string, params?: { video_id?: string; dataset_id?: string }) => {
+  listBots: (token: string, params?: { video_id?: string; dataset_id?: string; page?: number; page_size?: number }) => {
     const qs = new URLSearchParams();
     if (params?.video_id) qs.set("video_id", params.video_id);
     if (params?.dataset_id) qs.set("dataset_id", params.dataset_id);
-    const query = qs.toString();
-    return request<BotCommentItem[]>(`/review/bots${query ? `?${query}` : ""}`, {}, token);
+    qs.set("page", String(params?.page ?? 1));
+    qs.set("page_size", String(params?.page_size ?? 20));
+    return request<PaginatedResponse<BotCommentItem>>(`/review/bots?${qs}`, {}, token);
   },
 
   stats: (token: string) => request<ReviewStats>("/review/stats", {}, token),

@@ -12,9 +12,9 @@ export function ReviewPage() {
   const {
     loading,
     error,
-    conflicts,
+    conflictsData,
     conflictDetail,
-    bots,
+    botsData,
     stats,
     importResult,
     clearError,
@@ -28,6 +28,9 @@ export function ReviewPage() {
     downloadExport,
   } = useReview();
 
+  const conflicts = conflictsData?.items ?? [];
+  const bots = botsData?.items ?? [];
+
   const [tab, setTab] = useState<Tab>("conflicts");
   const [statusFilter, setStatusFilter] = useState<string>("pending");
   const [datasetFilter, setDatasetFilter] = useState<string>("");
@@ -36,8 +39,8 @@ export function ReviewPage() {
     conflictId: string;
     label: "bot" | "humano";
   } | null>(null);
-  const [conflictsPage, setConflictsPage] = useState(0);
-  const [botsPage, setBotsPage] = useState(0);
+  const [conflictsPage, setConflictsPage] = useState(1);
+  const [botsPage, setBotsPage] = useState(1);
   const [selectedBot, setSelectedBot] = useState<BotCommentItem | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importParseError, setImportParseError] = useState<string | null>(null);
@@ -53,15 +56,36 @@ export function ReviewPage() {
   // Load data on mount and when filters change
   useEffect(() => {
     if (!token || !isAdmin) return;
-    setConflictsPage(0);
-    setBotsPage(0);
+    setConflictsPage(1);
+    setBotsPage(1);
     fetchConflicts({
       status: statusFilter || undefined,
       dataset_id: datasetFilter || undefined,
+      page: 1,
     });
-    fetchBots({ dataset_id: datasetFilter || undefined });
+    fetchBots({ dataset_id: datasetFilter || undefined, page: 1 });
     fetchStats();
   }, [token, isAdmin, fetchConflicts, fetchBots, fetchStats, statusFilter, datasetFilter]);
+
+  const handleConflictsPageChange = useCallback(
+    (newPage: number) => {
+      setConflictsPage(newPage);
+      fetchConflicts({
+        status: statusFilter || undefined,
+        dataset_id: datasetFilter || undefined,
+        page: newPage,
+      });
+    },
+    [fetchConflicts, statusFilter, datasetFilter]
+  );
+
+  const handleBotsPageChange = useCallback(
+    (newPage: number) => {
+      setBotsPage(newPage);
+      fetchBots({ dataset_id: datasetFilter || undefined, page: newPage });
+    },
+    [fetchBots, datasetFilter]
+  );
 
   useEffect(() => {
     if (selectedConflict) {
@@ -259,7 +283,9 @@ export function ReviewPage() {
             conflicts={conflicts}
             loading={loading}
             page={conflictsPage}
-            onPageChange={setConflictsPage}
+            totalPages={conflictsData?.total_pages ?? 1}
+            total={conflictsData?.total ?? 0}
+            onPageChange={handleConflictsPageChange}
             onSelectConflict={setSelectedConflict}
           />
         )}
@@ -270,7 +296,9 @@ export function ReviewPage() {
             bots={bots}
             loading={loading}
             page={botsPage}
-            onPageChange={setBotsPage}
+            totalPages={botsData?.total_pages ?? 1}
+            total={botsData?.total ?? 0}
+            onPageChange={handleBotsPageChange}
             onSelectBot={setSelectedBot}
           />
         )}
@@ -409,22 +437,19 @@ function ConflictsTab({
   conflicts,
   loading,
   page,
+  totalPages,
+  total,
   onPageChange,
   onSelectConflict,
 }: {
   conflicts: ConflictListItem[];
   loading: boolean;
   page: number;
+  totalPages: number;
+  total: number;
   onPageChange: (p: number) => void;
   onSelectConflict: (id: string) => void;
 }) {
-  const PER_PAGE = 20;
-  const totalPages = Math.ceil(conflicts.length / PER_PAGE);
-  const paginated = useMemo(
-    () => conflicts.slice(page * PER_PAGE, (page + 1) * PER_PAGE),
-    [conflicts, page]
-  );
-
   if (conflicts.length === 0 && !loading) {
     return (
       <p className="text-sm text-gray-500">
@@ -457,7 +482,7 @@ function ConflictsTab({
             </tr>
           </thead>
           <tbody>
-            {paginated.map((c) => (
+            {conflicts.map((c) => (
               <tr
                 key={c.conflict_id}
                 className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
@@ -489,7 +514,7 @@ function ConflictsTab({
           page={page}
           totalPages={totalPages}
           onPageChange={onPageChange}
-          total={conflicts.length}
+          total={total}
         />
       )}
     </div>
@@ -502,19 +527,19 @@ function BotsTab({
   bots,
   loading,
   page,
+  totalPages,
+  total,
   onPageChange,
   onSelectBot,
 }: {
   bots: BotCommentItem[];
   loading: boolean;
   page: number;
+  totalPages: number;
+  total: number;
   onPageChange: (p: number) => void;
   onSelectBot: (bot: BotCommentItem) => void;
 }) {
-  const PER_PAGE = 20;
-  const totalPages = Math.ceil(bots.length / PER_PAGE);
-  const paginated = useMemo(() => bots.slice(page * PER_PAGE, (page + 1) * PER_PAGE), [bots, page]);
-
   if (bots.length === 0 && !loading) {
     return (
       <p className="text-sm text-gray-500">
@@ -547,7 +572,7 @@ function BotsTab({
             </tr>
           </thead>
           <tbody>
-            {paginated.map((b) => {
+            {bots.map((b) => {
               const botCount = b.annotations.filter((a) => a.label === "bot").length;
               const humanCount = b.annotations.filter((a) => a.label === "humano").length;
               return (
@@ -597,7 +622,7 @@ function BotsTab({
           page={page}
           totalPages={totalPages}
           onPageChange={onPageChange}
-          total={bots.length}
+          total={total}
         />
       )}
     </div>
@@ -1051,8 +1076,8 @@ function Pagination({
   onPageChange: (p: number) => void;
   total: number;
 }) {
-  const from = page * 20 + 1;
-  const to = Math.min((page + 1) * 20, total);
+  const from = (page - 1) * 20 + 1;
+  const to = Math.min(page * 20, total);
   return (
     <div className="flex items-center justify-between mt-4">
       <p className="text-xs text-gray-400">
@@ -1061,14 +1086,14 @@ function Pagination({
       <div className="flex gap-1">
         <button
           className="btn btn-ghost btn-sm"
-          disabled={page === 0}
+          disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
         >
           Anterior
         </button>
         <button
           className="btn btn-ghost btn-sm"
-          disabled={page >= totalPages - 1}
+          disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
         >
           Próxima

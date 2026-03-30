@@ -17,6 +17,9 @@ export interface DatasetUsersResponse {
   total_users: number;
   total_comments: number;
   annotated_comments_by_me: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
   items: UserItem[];
 }
 
@@ -89,8 +92,12 @@ export interface AnnotatorProgress {
 // ─── API ────────────────────────────────────────────────────────────────────
 
 export const annotateApi = {
-  listUsers: (datasetId: string, token: string) =>
-    request<DatasetUsersResponse>(`/annotate/users?dataset_id=${datasetId}`, {}, token),
+  listUsers: (datasetId: string, token: string, page = 1, pageSize = 20) =>
+    request<DatasetUsersResponse>(
+      `/annotate/users?dataset_id=${datasetId}&page=${page}&page_size=${pageSize}`,
+      {},
+      token
+    ),
 
   getComments: (entryId: string, token: string) =>
     request<UserCommentsResponse>(`/annotate/comments/${entryId}`, {}, token),

@@ -40,11 +40,18 @@ router = APIRouter(prefix="/annotate", tags=["annotate"])
 @router.get("/users", response_model=DatasetUsersResponse)
 def list_users_endpoint(
     dataset_id: uuid.UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return list_dataset_users(
-        db, dataset_id, current_user.id, is_admin=current_user.role == "admin"
+        db,
+        dataset_id,
+        current_user.id,
+        is_admin=current_user.role == "admin",
+        page=page,
+        page_size=page_size,
     )
 
 

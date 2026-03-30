@@ -8,11 +8,11 @@ from database import get_db
 from models.dataset import Dataset
 from models.user import User
 from schemas.review import (
-    BotCommentItem,
     ConflictDetail,
-    ConflictListItem,
     ImportChunkResponse,
     ImportResult,
+    PaginatedBots,
+    PaginatedConflicts,
     ResolveRequest,
     ResolveResponse,
     ReviewImport,
@@ -38,16 +38,23 @@ router = APIRouter(prefix="/review", tags=["review"])
 # ─── Listar conflitos ────────────────────────────────────────────────────────
 
 
-@router.get("/conflicts", response_model=list[ConflictListItem])
+@router.get("/conflicts", response_model=PaginatedConflicts)
 def list_conflicts_endpoint(
     status: str | None = Query(default=None),
     video_id: str | None = Query(default=None),
     dataset_id: uuid.UUID | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
     return list_conflicts(
-        db, conflict_status=status, video_id=video_id, dataset_id=dataset_id
+        db,
+        conflict_status=status,
+        video_id=video_id,
+        dataset_id=dataset_id,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -78,14 +85,22 @@ def resolve_endpoint(
 # ─── Listar bots ─────────────────────────────────────────────────────────────
 
 
-@router.get("/bots", response_model=list[BotCommentItem])
+@router.get("/bots", response_model=PaginatedBots)
 def list_bots_endpoint(
     video_id: str | None = Query(default=None),
     dataset_id: uuid.UUID | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    return list_bots(db, video_id=video_id, dataset_id=dataset_id)
+    return list_bots(
+        db,
+        video_id=video_id,
+        dataset_id=dataset_id,
+        page=page,
+        page_size=page_size,
+    )
 
 
 # ─── Estatisticas ────────────────────────────────────────────────────────────

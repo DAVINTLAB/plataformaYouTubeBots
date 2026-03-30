@@ -5,6 +5,7 @@ import {
   ConflictDetail,
   ConflictListItem,
   ImportResult,
+  PaginatedResponse,
   ReviewStats,
 } from "../api/review";
 import { useAuthContext } from "../contexts/AuthContext";
@@ -12,9 +13,9 @@ import { useAuthContext } from "../contexts/AuthContext";
 interface ReviewState {
   loading: boolean;
   error: string | null;
-  conflicts: ConflictListItem[];
+  conflictsData: PaginatedResponse<ConflictListItem> | null;
   conflictDetail: ConflictDetail | null;
-  bots: BotCommentItem[];
+  botsData: PaginatedResponse<BotCommentItem> | null;
   stats: ReviewStats | null;
   importResult: ImportResult | null;
 }
@@ -24,9 +25,9 @@ export function useReview() {
   const [state, setState] = useState<ReviewState>({
     loading: false,
     error: null,
-    conflicts: [],
+    conflictsData: null,
     conflictDetail: null,
-    bots: [],
+    botsData: null,
     stats: null,
     importResult: null,
   });
@@ -40,12 +41,12 @@ export function useReview() {
   }, []);
 
   const fetchConflicts = useCallback(
-    async (params?: { status?: string; video_id?: string; dataset_id?: string }) => {
+    async (params?: { status?: string; video_id?: string; dataset_id?: string; page?: number; page_size?: number }) => {
       if (!token) return;
       setState((s) => ({ ...s, loading: true, error: null }));
       try {
         const result = await reviewApi.listConflicts(token, params);
-        setState((s) => ({ ...s, loading: false, conflicts: result }));
+        setState((s) => ({ ...s, loading: false, conflictsData: result }));
         return result;
       } catch (err) {
         setState((s) => ({
@@ -93,9 +94,14 @@ export function useReview() {
         // Update conflict in local state
         setState((s) => ({
           ...s,
-          conflicts: s.conflicts.map((c) =>
-            c.conflict_id === conflictId ? { ...c, status: "resolved" } : c
-          ),
+          conflictsData: s.conflictsData
+            ? {
+                ...s.conflictsData,
+                items: s.conflictsData.items.map((c) =>
+                  c.conflict_id === conflictId ? { ...c, status: "resolved" } : c
+                ),
+              }
+            : null,
           conflictDetail: s.conflictDetail
             ? {
                 ...s.conflictDetail,
@@ -119,12 +125,12 @@ export function useReview() {
   );
 
   const fetchBots = useCallback(
-    async (params?: { video_id?: string; dataset_id?: string }) => {
+    async (params?: { video_id?: string; dataset_id?: string; page?: number; page_size?: number }) => {
       if (!token) return;
       setState((s) => ({ ...s, loading: true, error: null }));
       try {
         const result = await reviewApi.listBots(token, params);
-        setState((s) => ({ ...s, loading: false, bots: result }));
+        setState((s) => ({ ...s, loading: false, botsData: result }));
         return result;
       } catch (err) {
         setState((s) => ({

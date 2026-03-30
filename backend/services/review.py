@@ -27,45 +27,101 @@ def list_conflicts(
     conflict_status: str | None = None,
     video_id: str | None = None,
     dataset_id: uuid.UUID | None = None,
-) -> list[dict]:
-    query = db.query(AnnotationConflict)
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    # Query filtrada com JOINs no SQL (sem carregar tudo em Python)
+    query = (
+        db.query(AnnotationConflict)
+        .join(Comment, AnnotationConflict.comment_id == Comment.id)
+        .join(
+            DatasetEntry,
+            DatasetEntry.author_channel_id == Comment.author_channel_id,
+        )
+        .join(
+            Dataset,
+            (Dataset.id == DatasetEntry.dataset_id)
+            & (Dataset.collection_id == Comment.collection_id),
+        )
+    )
 
     if conflict_status:
         query = query.filter(AnnotationConflict.status == conflict_status)
+    if dataset_id:
+        query = query.filter(Dataset.id == dataset_id)
+    if video_id:
+        query = query.join(Collection, Collection.id == Dataset.collection_id).filter(
+            Collection.video_id == video_id
+        )
 
-    conflicts = query.order_by(AnnotationConflict.created_at.desc()).all()
+    total = query.count()
+    offset = (page - 1) * page_size
+    conflicts = (
+        query.order_by(AnnotationConflict.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
 
-    result = []
+    if not conflicts:
+        return _empty_page(page, page_size, total)
+
+    # Batch load apenas para a página
+    ann_ids = set()
+    comment_ids = set()
     for c in conflicts:
-        ann_a = db.query(Annotation).filter(Annotation.id == c.annotation_a_id).first()
-        ann_b = db.query(Annotation).filter(Annotation.id == c.annotation_b_id).first()
+        ann_ids.update([c.annotation_a_id, c.annotation_b_id])
+        comment_ids.add(c.comment_id)
+
+    annotations = db.query(Annotation).filter(Annotation.id.in_(ann_ids)).all()
+    ann_map = {a.id: a for a in annotations}
+
+    comments = db.query(Comment).filter(Comment.id.in_(comment_ids)).all()
+    comment_map = {c.id: c for c in comments}
+
+    user_ids = {a.annotator_id for a in annotations}
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    user_map = {u.id: u for u in users}
+
+    author_ids = {c.author_channel_id for c in comments}
+    collection_ids = {c.collection_id for c in comments}
+    entries_with_ds = (
+        db.query(DatasetEntry, Dataset)
+        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
+        .filter(
+            DatasetEntry.author_channel_id.in_(author_ids),
+            Dataset.collection_id.in_(collection_ids),
+        )
+        .all()
+    )
+    ds_map: dict[tuple, Dataset] = {}
+    for entry, ds in entries_with_ds:
+        key = (entry.author_channel_id, ds.collection_id)
+        if key not in ds_map:
+            ds_map[key] = ds
+
+    items = []
+    for c in conflicts:
+        ann_a = ann_map.get(c.annotation_a_id)
+        ann_b = ann_map.get(c.annotation_b_id)
         if not ann_a or not ann_b:
             continue
 
-        comment = db.query(Comment).filter(Comment.id == c.comment_id).first()
+        comment = comment_map.get(c.comment_id)
         if not comment:
             continue
 
-        ds = _find_dataset_for_comment(db, comment)
-        if not ds:
-            continue
+        ds = ds_map.get((comment.author_channel_id, comment.collection_id))
 
-        if dataset_id and ds.id != dataset_id:
-            continue
-        if video_id:
-            col = db.query(Collection).filter(Collection.id == ds.collection_id).first()
-            if not col or col.video_id != video_id:
-                continue
+        annotator_a = user_map.get(ann_a.annotator_id)
+        annotator_b = user_map.get(ann_b.annotator_id)
 
-        annotator_a = db.query(User).filter(User.id == ann_a.annotator_id).first()
-        annotator_b = db.query(User).filter(User.id == ann_b.annotator_id).first()
-
-        result.append(
+        items.append(
             {
                 "conflict_id": c.id,
                 "comment_id": c.comment_id,
-                "dataset_id": ds.id,
-                "dataset_name": ds.name,
+                "dataset_id": ds.id if ds else None,
+                "dataset_name": ds.name if ds else "",
                 "author_display_name": comment.author_display_name,
                 "text_original": comment.text_original,
                 "label_a": ann_a.label,
@@ -79,7 +135,25 @@ def list_conflicts(
             }
         )
 
-    return result
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "items": items,
+    }
+
+
+def _empty_page(page: int, page_size: int, total: int = 0) -> dict:
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "items": [],
+    }
 
 
 def _find_dataset_for_comment(db: Session, comment: Comment):
@@ -258,9 +332,10 @@ def list_bots(
     *,
     video_id: str | None = None,
     dataset_id: uuid.UUID | None = None,
-) -> list[dict]:
-    """Lista cada comentário que tem pelo menos uma anotação 'bot'."""
-    # Comments with at least one 'bot' annotation
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """Lista comentários com pelo menos uma anotação 'bot'."""
     bot_comment_ids = (
         db.query(Annotation.comment_id)
         .filter(Annotation.label == "bot")
@@ -268,33 +343,86 @@ def list_bots(
         .subquery()
     )
 
-    comments = (
+    # Query filtrada com JOINs no SQL
+    query = (
         db.query(Comment)
         .filter(Comment.id.in_(bot_comment_ids.select()))
-        .order_by(Comment.published_at.desc())
+        .join(
+            DatasetEntry,
+            DatasetEntry.author_channel_id == Comment.author_channel_id,
+        )
+        .join(
+            Dataset,
+            (Dataset.id == DatasetEntry.dataset_id)
+            & (Dataset.collection_id == Comment.collection_id),
+        )
+    )
+
+    if dataset_id:
+        query = query.filter(Dataset.id == dataset_id)
+    if video_id:
+        query = query.join(Collection, Collection.id == Dataset.collection_id).filter(
+            Collection.video_id == video_id
+        )
+
+    total = query.count()
+    offset = (page - 1) * page_size
+    comments = (
+        query.order_by(Comment.published_at.desc())
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
 
-    result = []
-    for comment in comments:
-        ds = _find_dataset_for_comment(db, comment)
-        if not ds:
-            continue
+    if not comments:
+        return _empty_page(page, page_size, total)
 
-        if dataset_id and ds.id != dataset_id:
-            continue
-        if video_id:
-            col = db.query(Collection).filter(Collection.id == ds.collection_id).first()
-            if not col or col.video_id != video_id:
-                continue
+    # Batch load apenas para a página
+    comment_ids = [c.id for c in comments]
+    author_ids = {c.author_channel_id for c in comments}
+    collection_ids = {c.collection_id for c in comments}
 
-        # All annotations for this comment
-        annotations = (
-            db.query(Annotation).filter(Annotation.comment_id == comment.id).all()
+    entries_with_ds = (
+        db.query(DatasetEntry, Dataset)
+        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
+        .filter(
+            DatasetEntry.author_channel_id.in_(author_ids),
+            Dataset.collection_id.in_(collection_ids),
         )
+        .all()
+    )
+    ds_map: dict[tuple, Dataset] = {}
+    for entry, ds in entries_with_ds:
+        key = (entry.author_channel_id, ds.collection_id)
+        if key not in ds_map:
+            ds_map[key] = ds
+
+    all_annotations = (
+        db.query(Annotation).filter(Annotation.comment_id.in_(comment_ids)).all()
+    )
+    ann_by_comment: dict[uuid.UUID, list[Annotation]] = {}
+    for a in all_annotations:
+        ann_by_comment.setdefault(a.comment_id, []).append(a)
+
+    user_ids = {a.annotator_id for a in all_annotations}
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    user_map = {u.id: u for u in users}
+
+    all_conflicts = (
+        db.query(AnnotationConflict)
+        .filter(AnnotationConflict.comment_id.in_(comment_ids))
+        .all()
+    )
+    conflict_map = {c.comment_id: c for c in all_conflicts}
+
+    items = []
+    for comment in comments:
+        ds = ds_map.get((comment.author_channel_id, comment.collection_id))
+
+        annotations = ann_by_comment.get(comment.id, [])
         ann_list = []
         for a in annotations:
-            annotator = db.query(User).filter(User.id == a.annotator_id).first()
+            annotator = user_map.get(a.annotator_id)
             ann_list.append(
                 {
                     "annotator_name": annotator.name if annotator else "",
@@ -303,27 +431,30 @@ def list_bots(
                 }
             )
 
-        conflict = (
-            db.query(AnnotationConflict)
-            .filter(AnnotationConflict.comment_id == comment.id)
-            .first()
-        )
+        conflict = conflict_map.get(comment.id)
 
-        result.append(
+        items.append(
             {
                 "comment_db_id": comment.id,
                 "text_original": comment.text_original,
                 "author_display_name": comment.author_display_name,
                 "author_channel_id": comment.author_channel_id,
-                "dataset_id": ds.id,
-                "dataset_name": ds.name,
+                "dataset_id": ds.id if ds else None,
+                "dataset_name": ds.name if ds else "",
                 "annotations": ann_list,
                 "has_conflict": conflict is not None,
                 "conflict_id": conflict.id if conflict else None,
             }
         )
 
-    return result
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "items": items,
+    }
 
 
 # ─── Estatísticas ─────────────────────────────────────────────────────────────

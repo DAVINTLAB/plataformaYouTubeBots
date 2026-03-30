@@ -106,6 +106,9 @@ class DatasetUsersResponse(BaseModel):
     total_users: int
     total_comments: int
     annotated_comments_by_me: int
+    page: int
+    page_size: int
+    total_pages: int
     items: list[UserItem]
 
 

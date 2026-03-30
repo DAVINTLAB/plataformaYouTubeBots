@@ -192,31 +192,36 @@ class TestListConflicts:
     def test_lista_conflitos_pendentes(self, client, auth_as_admin, setup_conflict):
         resp = client.get("/review/conflicts?status=pending")
         assert resp.status_code == 200
-        data = resp.json()
+        body = resp.json()
+        assert "items" in body
+        data = body["items"]
         assert len(data) == 1
         assert data[0]["status"] == "pending"
         assert data[0]["label_a"] == "bot"
         assert data[0]["label_b"] == "humano"
         assert "text_original" in data[0]
         assert "dataset_id" in data[0]
+        assert body["total"] == 1
 
     def test_lista_vazia_sem_conflitos(self, client, auth_as_admin):
         resp = client.get("/review/conflicts")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     def test_filtro_por_dataset_id(self, client, auth_as_admin, setup_conflict):
         ds_id = str(setup_conflict["dataset"].id)
         resp = client.get(f"/review/conflicts?dataset_id={ds_id}")
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
     def test_filtro_por_dataset_id_inexistente(
         self, client, auth_as_admin, setup_conflict
     ):
         resp = client.get(f"/review/conflicts?dataset_id={uuid.uuid4()}")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json()["items"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +369,8 @@ class TestListBots:
 
         resp = client.get("/review/bots")
         assert resp.status_code == 200
-        data = resp.json()
+        body = resp.json()
+        data = body["items"]
         # Comentarios de UC_botA aparecem (tem anotacao bot), UC_humanB nao
         channel_ids = [item["author_channel_id"] for item in data]
         assert "UC_botA" in channel_ids
@@ -404,14 +410,18 @@ class TestListBots:
         # Em /bots (por comentario)
         resp_bots = client.get("/review/bots")
         bot_items = [
-            b for b in resp_bots.json() if b["author_channel_id"] == "UC_consenso_bot"
+            b
+            for b in resp_bots.json()["items"]
+            if b["author_channel_id"] == "UC_consenso_bot"
         ]
         assert len(bot_items) == 1
         assert bot_items[0]["has_conflict"] is False
 
         # Nao em /conflicts
         resp_conflicts = client.get("/review/conflicts")
-        comment_ids_in_conflicts = [c["comment_id"] for c in resp_conflicts.json()]
+        comment_ids_in_conflicts = [
+            c["comment_id"] for c in resp_conflicts.json()["items"]
+        ]
         assert str(comments[0].id) not in comment_ids_in_conflicts
 
 
