@@ -29,6 +29,8 @@ def list_dataset_users(
     is_admin: bool = False,
     page: int = 1,
     page_size: int = 20,
+    pending_first: bool = False,
+    only_pending: bool = False,
 ) -> dict:
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if dataset is None:
@@ -36,27 +38,78 @@ def list_dataset_users(
 
     collection_id = dataset.collection_id
 
-    # Total de entries (1 query COUNT, sem carregar objetos)
-    total_users = (
-        db.query(func.count(DatasetEntry.id))
-        .filter(DatasetEntry.dataset_id == dataset_id)
-        .scalar()
+    # Subquery: comment_count por autor no dataset
+    comment_count_sub = (
+        db.query(
+            Comment.author_channel_id,
+            func.count(Comment.id).label("cc"),
+        )
+        .filter(Comment.collection_id == collection_id)
+        .group_by(Comment.author_channel_id)
+        .subquery()
     )
 
-    # Página de entries (LIMIT/OFFSET no banco)
+    # Subquery: annotated_count por autor
+    if is_admin:
+        ann_sub = (
+            db.query(
+                Comment.author_channel_id,
+                func.count(func.distinct(Annotation.comment_id)).label("ac"),
+            )
+            .join(Annotation, Annotation.comment_id == Comment.id)
+            .filter(Comment.collection_id == collection_id)
+            .group_by(Comment.author_channel_id)
+            .subquery()
+        )
+    else:
+        ann_sub = (
+            db.query(
+                Comment.author_channel_id,
+                func.count(Annotation.id).label("ac"),
+            )
+            .join(Annotation, Annotation.comment_id == Comment.id)
+            .filter(
+                Comment.collection_id == collection_id,
+                Annotation.annotator_id == annotator_id,
+            )
+            .group_by(Comment.author_channel_id)
+            .subquery()
+        )
+
+    # Query base com LEFT JOINs para contagens
+    cc_col = func.coalesce(comment_count_sub.c.cc, 0)
+    ac_col = func.coalesce(ann_sub.c.ac, 0)
+    pending_col = (cc_col - ac_col).label("pending")
+
+    base_query = (
+        db.query(DatasetEntry, cc_col.label("cc"), ac_col.label("ac"), pending_col)
+        .outerjoin(
+            comment_count_sub,
+            comment_count_sub.c.author_channel_id == DatasetEntry.author_channel_id,
+        )
+        .outerjoin(
+            ann_sub,
+            ann_sub.c.author_channel_id == DatasetEntry.author_channel_id,
+        )
+        .filter(DatasetEntry.dataset_id == dataset_id)
+    )
+
+    if only_pending:
+        base_query = base_query.filter(pending_col > 0)
+
+    # Total filtrado
+    total_users = base_query.count()
+
+    # Ordenação
+    if pending_first:
+        order = [pending_col.desc(), DatasetEntry.author_display_name]
+    else:
+        order = [DatasetEntry.author_display_name]
+
     offset = (page - 1) * page_size
-    entries = (
-        db.query(DatasetEntry)
-        .filter(DatasetEntry.dataset_id == dataset_id)
-        .order_by(DatasetEntry.author_display_name)
-        .offset(offset)
-        .limit(page_size)
-        .all()
-    )
+    rows = base_query.order_by(*order).offset(offset).limit(page_size).all()
 
-    page_author_ids = [e.author_channel_id for e in entries]
-
-    # Totais globais (todos os autores do dataset, não só da página)
+    # Totais globais (sem filtro only_pending)
     all_author_ids_sub = (
         db.query(DatasetEntry.author_channel_id)
         .filter(DatasetEntry.dataset_id == dataset_id)
@@ -94,63 +147,9 @@ def list_dataset_users(
             .scalar()
         ) or 0
 
-    if not page_author_ids:
-        return {
-            "dataset_id": dataset.id,
-            "dataset_name": dataset.name,
-            "total_users": total_users,
-            "total_comments": total_comments,
-            "annotated_comments_by_me": total_annotated,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": _total_pages(total_users, page_size),
-            "items": [],
-        }
-
-    # Contagens apenas para os autores da página
-    comment_counts = (
-        db.query(Comment.author_channel_id, func.count(Comment.id))
-        .filter(
-            Comment.collection_id == collection_id,
-            Comment.author_channel_id.in_(page_author_ids),
-        )
-        .group_by(Comment.author_channel_id)
-        .all()
-    )
-    counts_map = dict(comment_counts)
-
-    if is_admin:
-        ann_counts = (
-            db.query(
-                Comment.author_channel_id,
-                func.count(func.distinct(Annotation.comment_id)),
-            )
-            .join(Annotation, Annotation.comment_id == Comment.id)
-            .filter(
-                Comment.collection_id == collection_id,
-                Comment.author_channel_id.in_(page_author_ids),
-            )
-            .group_by(Comment.author_channel_id)
-            .all()
-        )
-    else:
-        ann_counts = (
-            db.query(Comment.author_channel_id, func.count(Annotation.id))
-            .join(Annotation, Annotation.comment_id == Comment.id)
-            .filter(
-                Comment.collection_id == collection_id,
-                Comment.author_channel_id.in_(page_author_ids),
-                Annotation.annotator_id == annotator_id,
-            )
-            .group_by(Comment.author_channel_id)
-            .all()
-        )
-    ann_map = dict(ann_counts)
-
+    # Montar items a partir das rows (contagens já vêm da query)
     items = []
-    for entry in entries:
-        cc = counts_map.get(entry.author_channel_id, 0)
-        ac = ann_map.get(entry.author_channel_id, 0)
+    for entry, cc, ac, _pending in rows:
         items.append(
             {
                 "entry_id": entry.id,

@@ -18,6 +18,9 @@ export function AnnotatePage() {
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
+  const [pendingFirst, setPendingFirst] = useState(true);
+  const [onlyPending, setOnlyPending] = useState(false);
+  const [pageInput, setPageInput] = useState("1");
   const USERS_PER_PAGE = 20;
 
   const {
@@ -58,27 +61,80 @@ export function AnnotatePage() {
     }
   }, [isAdmin, fetchProgress, fetchAllProgress]);
 
+  // ─── Derived ────────────────────────────────────────────────────────
+  const datasetProgress = progress.find((p) => p.dataset_id === selectedDatasetId);
+  const globalPercent = datasetProgress ? datasetProgress.percent_complete : 0;
+  const totalUsersPages = datasetUsers?.total_pages ?? 0;
+
+  // ─── Helpers ─────────────────────────────────────────────────────────
+  const fetchOpts = useCallback(
+    (page: number) => ({
+      page,
+      pageSize: USERS_PER_PAGE,
+      pendingFirst,
+      onlyPending,
+    }),
+    [pendingFirst, onlyPending]
+  );
+
   // ─── Handlers ───────────────────────────────────────────────────────
   const handleSelectDataset = useCallback(
     (id: string) => {
       setSelectedDatasetId(id);
       setUsersPage(1);
+      setPageInput("1");
       if (id) {
-        fetchDatasetUsers(id, 1, USERS_PER_PAGE);
+        fetchDatasetUsers(id, fetchOpts(1));
       }
     },
-    [fetchDatasetUsers]
+    [fetchDatasetUsers, fetchOpts]
   );
 
   const handlePageChange = useCallback(
     (newPage: number) => {
       setUsersPage(newPage);
+      setPageInput(String(newPage));
       if (selectedDatasetId) {
-        fetchDatasetUsers(selectedDatasetId, newPage, USERS_PER_PAGE);
+        fetchDatasetUsers(selectedDatasetId, fetchOpts(newPage));
       }
     },
-    [selectedDatasetId, fetchDatasetUsers]
+    [selectedDatasetId, fetchDatasetUsers, fetchOpts]
   );
+
+  const handlePageInputSubmit = useCallback(() => {
+    const p = Math.max(1, Math.min(parseInt(pageInput, 10) || 1, totalUsersPages || 1));
+    handlePageChange(p);
+  }, [pageInput, totalUsersPages, handlePageChange]);
+
+  const handleTogglePendingFirst = useCallback(() => {
+    const next = !pendingFirst;
+    setPendingFirst(next);
+    setUsersPage(1);
+    setPageInput("1");
+    if (selectedDatasetId) {
+      fetchDatasetUsers(selectedDatasetId, {
+        page: 1,
+        pageSize: USERS_PER_PAGE,
+        pendingFirst: next,
+        onlyPending,
+      });
+    }
+  }, [pendingFirst, onlyPending, selectedDatasetId, fetchDatasetUsers]);
+
+  const handleToggleOnlyPending = useCallback(() => {
+    const next = !onlyPending;
+    setOnlyPending(next);
+    setUsersPage(1);
+    setPageInput("1");
+    if (selectedDatasetId) {
+      fetchDatasetUsers(selectedDatasetId, {
+        page: 1,
+        pageSize: USERS_PER_PAGE,
+        pendingFirst,
+        onlyPending: next,
+      });
+    }
+  }, [onlyPending, pendingFirst, selectedDatasetId, fetchDatasetUsers]);
 
   const handleSelectUser = useCallback(
     (entryId: string) => {
@@ -102,9 +158,9 @@ export function AnnotatePage() {
 
   const handleBackToUsers = useCallback(() => {
     if (selectedDatasetId) {
-      fetchDatasetUsers(selectedDatasetId, usersPage, USERS_PER_PAGE);
+      fetchDatasetUsers(selectedDatasetId, fetchOpts(usersPage));
     }
-  }, [selectedDatasetId, usersPage, fetchDatasetUsers]);
+  }, [selectedDatasetId, usersPage, fetchDatasetUsers, fetchOpts]);
 
   const handleImport = useCallback(
     (e: FormEvent) => {
@@ -147,12 +203,6 @@ export function AnnotatePage() {
     },
     [importFile, importAnnotations, fetchProgress]
   );
-
-  // ─── Derived ────────────────────────────────────────────────────────
-  const datasetProgress = progress.find((p) => p.dataset_id === selectedDatasetId);
-  const globalPercent = datasetProgress ? datasetProgress.percent_complete : 0;
-
-  const totalUsersPages = datasetUsers?.total_pages ?? 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -352,6 +402,51 @@ export function AnnotatePage() {
                       label={`${globalPercent}% — ${datasetProgress.bots} bots, ${datasetProgress.humans} humanos`}
                       size="sm"
                     />
+                  </div>
+                )}
+
+                {/* Filtros e navegação */}
+                {datasetUsers && (
+                  <div className="flex flex-wrap items-center gap-4 mb-4">
+                    {!isAdmin && (
+                      <>
+                        <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-davint-400 focus:ring-davint-400"
+                            checked={pendingFirst}
+                            onChange={handleTogglePendingFirst}
+                          />
+                          Pendentes primeiro
+                        </label>
+                        <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-davint-400 focus:ring-davint-400"
+                            checked={onlyPending}
+                            onChange={handleToggleOnlyPending}
+                          />
+                          Apenas pendentes
+                        </label>
+                      </>
+                    )}
+
+                    {totalUsersPages > 1 && (
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <span className="text-xs text-gray-500">Página</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={totalUsersPages}
+                          value={pageInput}
+                          onChange={(e) => setPageInput(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handlePageInputSubmit()}
+                          onBlur={handlePageInputSubmit}
+                          className="w-14 px-2 py-1 text-xs text-center border border-gray-200 rounded focus:border-davint-400 focus:ring-1 focus:ring-davint-400 outline-none"
+                        />
+                        <span className="text-xs text-gray-400">de {totalUsersPages}</span>
+                      </div>
+                    )}
                   </div>
                 )}
 

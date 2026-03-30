@@ -92,12 +92,19 @@ export interface AnnotatorProgress {
 // ─── API ────────────────────────────────────────────────────────────────────
 
 export const annotateApi = {
-  listUsers: (datasetId: string, token: string, page = 1, pageSize = 20) =>
-    request<DatasetUsersResponse>(
-      `/annotate/users?dataset_id=${datasetId}&page=${page}&page_size=${pageSize}`,
-      {},
-      token
-    ),
+  listUsers: (
+    datasetId: string,
+    token: string,
+    opts?: { page?: number; pageSize?: number; pendingFirst?: boolean; onlyPending?: boolean }
+  ) => {
+    const qs = new URLSearchParams();
+    qs.set("dataset_id", datasetId);
+    qs.set("page", String(opts?.page ?? 1));
+    qs.set("page_size", String(opts?.pageSize ?? 20));
+    if (opts?.pendingFirst) qs.set("pending_first", "true");
+    if (opts?.onlyPending) qs.set("only_pending", "true");
+    return request<DatasetUsersResponse>(`/annotate/users?${qs}`, {}, token);
+  },
 
   getComments: (entryId: string, token: string) =>
     request<UserCommentsResponse>(`/annotate/comments/${entryId}`, {}, token),

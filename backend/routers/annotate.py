@@ -42,6 +42,8 @@ def list_users_endpoint(
     dataset_id: uuid.UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    pending_first: bool = Query(default=False),
+    only_pending: bool = Query(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -52,6 +54,8 @@ def list_users_endpoint(
         is_admin=current_user.role == "admin",
         page=page,
         page_size=page_size,
+        pending_first=pending_first,
+        only_pending=only_pending,
     )
 
 

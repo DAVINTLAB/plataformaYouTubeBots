@@ -41,11 +41,14 @@ export function useAnnotate() {
   }, []);
 
   const fetchDatasetUsers = useCallback(
-    async (datasetId: string, page = 1, pageSize = 20) => {
+    async (
+      datasetId: string,
+      opts?: { page?: number; pageSize?: number; pendingFirst?: boolean; onlyPending?: boolean }
+    ) => {
       if (!token) return;
       setState((s) => ({ ...s, loading: true, error: null }));
       try {
-        const result = await annotateApi.listUsers(datasetId, token, page, pageSize);
+        const result = await annotateApi.listUsers(datasetId, token, opts);
         setState((s) => ({ ...s, loading: false, datasetUsers: result, userComments: null }));
         return result;
       } catch (err) {
