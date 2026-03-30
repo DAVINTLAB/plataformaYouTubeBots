@@ -149,7 +149,7 @@ const PIPELINE_STAGES: StageCard[] = [
       "Aplique critérios estatísticos e comportamentais para filtrar usuários suspeitos de bot.",
     route: "/clean",
     adminOnly: false,
-    available: false,
+    available: true,
     icon: <IconFunnel />,
   },
   {
