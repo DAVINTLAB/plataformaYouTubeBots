@@ -482,7 +482,7 @@ async def enrich_collection(
                 collection.channel_dates_failed = True
                 db.commit()
 
-            remaining = len(_channels_needing_dates(db, collection_id, limit=1))
+            remaining = len(_channels_needing_dates(db, collection_id, limit=100000))
             return {
                 "phase": "channels",
                 "processed": len(channel_ids),
@@ -613,9 +613,9 @@ def import_collection(
     v = payload.video
     collection = Collection(
         video_id=v.id,
-        status="completed",
+        status="completed" if payload.done else "importing",
         collected_by=user_id,
-        completed_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC) if payload.done else None,
         video_title=v.title,
         video_channel_id=v.channel_id,
         video_channel_title=v.channel_title,
@@ -654,6 +654,56 @@ def import_collection(
     return collection
 
 
+def import_chunk(
+    db: Session,
+    collection_id: uuid.UUID,
+    comments: list,
+    done: bool,
+) -> dict:
+    """Appenda um batch de comentários a uma coleta existente (import paginado)."""
+    collection = db.query(Collection).filter(Collection.id == collection_id).first()
+    if collection is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Coleta não encontrada.")
+
+    for c in comments:
+        comment = Comment(
+            collection_id=collection.id,
+            comment_id=c.comment_id,
+            parent_id=c.parent_id,
+            author_display_name=c.author_display_name,
+            author_channel_id=c.author_channel_id,
+            author_channel_published_at=c.author_channel_published_at,
+            author_profile_image_url=c.author_profile_image_url,
+            author_channel_url=c.author_channel_url,
+            text_original=c.text_original,
+            text_display=c.text_display,
+            like_count=c.like_count,
+            reply_count=c.reply_count,
+            published_at=c.published_at,
+            updated_at=c.updated_at,
+        )
+        db.add(comment)
+
+    db.commit()
+
+    total = db.query(Comment).filter(Comment.collection_id == collection_id).count()
+    collection.total_comments = total
+
+    if done:
+        collection.status = "completed"
+        collection.completed_at = datetime.now(UTC)
+
+    db.commit()
+    db.refresh(collection)
+
+    return {
+        "collection_id": collection.id,
+        "total_comments": total,
+        "chunk_received": len(comments),
+        "done": done,
+    }
+
+
 def delete_collection(db: Session, collection_id: uuid.UUID) -> None:
     collection = db.query(Collection).filter(Collection.id == collection_id).first()
     if collection is None:
@@ -670,10 +720,11 @@ def delete_collection(db: Session, collection_id: uuid.UUID) -> None:
     db.commit()
 
 
-def export_comments(db: Session, collection_id: uuid.UUID) -> list[Comment]:
+def export_comments_iter(db: Session, collection_id: uuid.UUID):
+    """Retorna iterador de comentários — yield_per evita carregar tudo na RAM."""
     return (
         db.query(Comment)
         .filter(Comment.collection_id == collection_id)
         .order_by(Comment.published_at)
-        .all()
+        .yield_per(500)
     )

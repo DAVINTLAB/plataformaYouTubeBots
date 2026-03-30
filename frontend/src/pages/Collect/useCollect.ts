@@ -20,6 +20,8 @@ interface CollectState {
   enrichPhase: "video" | "replies" | "channels" | null;
   enrichRemaining: number;
   enrichDone: boolean;
+  // Import progress
+  importProgress: { sent: number; total: number } | null;
 }
 
 export function useCollect() {
@@ -33,6 +35,7 @@ export function useCollect() {
     enrichPhase: null,
     enrichRemaining: 0,
     enrichDone: false,
+    importProgress: null,
   });
 
   const apiKeyRef = useRef<string>("");
@@ -342,20 +345,24 @@ export function useCollect() {
   const importCollectionFn = useCallback(
     async (data: ImportRequest) => {
       if (!token) return;
-      setState((s) => ({ ...s, loading: true, error: null, active: null }));
+      setState((s) => ({ ...s, loading: true, error: null, active: null, importProgress: null }));
       try {
-        const result = await collectApi.importCollection(data, token);
+        const result = await collectApi.importCollection(data, token, (sent, total) => {
+          setState((s) => ({ ...s, importProgress: { sent, total } }));
+        });
         setState((s) => ({
           ...s,
           active: result,
           loading: false,
           enrichDone: true,
+          importProgress: null,
         }));
         void loadCollections();
       } catch (err) {
         setState((s) => ({
           ...s,
           loading: false,
+          importProgress: null,
           error: err instanceof Error ? err.message : "Erro ao importar arquivo.",
         }));
       }
@@ -395,6 +402,41 @@ export function useCollect() {
       }
     },
     [token, loadCollections]
+  );
+
+  const restoreFromList = useCallback(
+    async (collectionId: string) => {
+      if (!token) return;
+      try {
+        const status = await collectApi.getStatus(collectionId, token);
+        const asActive: CollectionStarted = {
+          collection_id: status.collection_id,
+          video_id: status.video_id,
+          status: status.status,
+          total_comments: status.total_comments,
+          channel_dates_failed: status.channel_dates_failed ?? null,
+          enrich_status: status.enrich_status ?? null,
+          duration_seconds: status.duration_seconds ?? null,
+          next_page_token: null,
+          created_at: status.collected_at ?? new Date().toISOString(),
+        };
+        sessionStorage.setItem(STORAGE_KEY, collectionId);
+        setState((s) => ({
+          ...s,
+          active: asActive,
+          error: null,
+          enrichPhase: null,
+          enrichRemaining: 0,
+          enrichDone: false,
+        }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          error: err instanceof Error ? err.message : "Erro ao restaurar coleta.",
+        }));
+      }
+    },
+    [token]
   );
 
   const clearActive = useCallback(() => {
@@ -498,11 +540,13 @@ export function useCollect() {
     enrichPhase: state.enrichPhase,
     enrichRemaining: state.enrichRemaining,
     enrichDone: state.enrichDone,
+    importProgress: state.importProgress,
     startCollection,
     resumeCollection,
     importCollection: importCollectionFn,
     deleteCollection: deleteCollectionFn,
     clearActive,
     loadCollections,
+    restoreFromList,
   };
 }

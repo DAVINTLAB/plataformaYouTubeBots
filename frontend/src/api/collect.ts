@@ -3,7 +3,7 @@ import { API_URL, ApiError, request } from "./http";
 export interface CollectionStarted {
   collection_id: string;
   video_id: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "importing";
   total_comments: number | null;
   next_page_token: string | null;
   channel_dates_failed: boolean | null;
@@ -15,7 +15,7 @@ export interface CollectionStarted {
 export interface CollectionStatus {
   collection_id: string;
   video_id: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "importing";
   total_comments: number | null;
   channel_dates_failed: boolean | null;
   enrich_status: string | null;
@@ -28,7 +28,7 @@ export interface CollectionSummary {
   collection_id: string;
   video_id: string;
   video_title: string | null;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "importing";
   total_comments: number | null;
   channel_dates_failed: boolean | null;
   enrich_status: string | null;
@@ -72,6 +72,16 @@ export interface ImportRequest {
   }>;
 }
 
+export interface ImportChunkResponse {
+  collection_id: string;
+  total_comments: number;
+  chunk_received: number;
+  done: boolean;
+}
+
+// Limite de ~3MB por request para caber no Vercel (4.5MB com overhead de headers/JSON)
+const IMPORT_CHUNK_SIZE = 2000;
+
 export const collectApi = {
   warmup: async () => {
     try {
@@ -91,12 +101,63 @@ export const collectApi = {
       token
     ),
 
-  importCollection: (data: ImportRequest, token: string) =>
-    request<CollectionStarted>(
+  importCollection: async (
+    data: ImportRequest,
+    token: string,
+    onProgress?: (sent: number, total: number) => void
+  ): Promise<CollectionStarted> => {
+    const allComments = data.comments;
+    const total = allComments.length;
+
+    // Primeiro batch: cria a collection com video metadata + primeiros N comments
+    const firstBatch = allComments.slice(0, IMPORT_CHUNK_SIZE);
+    const hasMore = total > IMPORT_CHUNK_SIZE;
+
+    const result = await request<CollectionStarted>(
       "/collect/import",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          video: data.video,
+          comments: firstBatch,
+          done: !hasMore,
+        }),
+      },
       token
-    ),
+    );
+    onProgress?.(firstBatch.length, total);
+
+    if (!hasMore) return result;
+
+    // Chunks subsequentes
+    let offset = IMPORT_CHUNK_SIZE;
+    while (offset < total) {
+      const chunk = allComments.slice(offset, offset + IMPORT_CHUNK_SIZE);
+      const isLast = offset + chunk.length >= total;
+
+      await request<ImportChunkResponse>(
+        "/collect/import-chunk",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            collection_id: result.collection_id,
+            comments: chunk,
+            done: isLast,
+          }),
+        },
+        token
+      );
+      offset += chunk.length;
+      onProgress?.(offset, total);
+    }
+
+    // Buscar status final
+    return request<CollectionStarted>(
+      `/collect/status?collection_id=${result.collection_id}`,
+      {},
+      token
+    ) as Promise<CollectionStarted>;
+  },
 
   enrich: (collectionId: string, apiKey: string, token: string) =>
     request<EnrichResponse>(

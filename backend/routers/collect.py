@@ -17,6 +17,8 @@ from schemas.collect import (
     CollectRequest,
     EnrichRequest,
     EnrichResponse,
+    ImportChunkRequest,
+    ImportChunkResponse,
     ImportRequest,
 )
 from services.auth import get_current_user
@@ -24,8 +26,9 @@ from services.collect import (
     collect_next_page,
     delete_collection,
     enrich_collection,
-    export_comments,
+    export_comments_iter,
     get_collection_status,
+    import_chunk,
     import_collection,
     list_collections,
     start_collection,
@@ -108,6 +111,16 @@ def import_endpoint(
     return _to_started(collection, None)
 
 
+@router.post("/import-chunk", response_model=ImportChunkResponse)
+def import_chunk_endpoint(
+    payload: ImportChunkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = import_chunk(db, payload.collection_id, payload.comments, payload.done)
+    return ImportChunkResponse(**result)
+
+
 @router.post("/{collection_id}/enrich", response_model=EnrichResponse)
 async def enrich(
     collection_id: uuid.UUID,
@@ -133,6 +146,87 @@ def get_status(
     return _to_status(collection, current_user.username)
 
 
+_CSV_FIELDS = [
+    "video_id",
+    "video_title",
+    "video_channel_id",
+    "video_channel_title",
+    "video_published_at",
+    "video_view_count",
+    "video_like_count",
+    "video_comment_count",
+    "comment_id",
+    "parent_id",
+    "author_display_name",
+    "author_channel_id",
+    "author_channel_published_at",
+    "author_profile_image_url",
+    "author_channel_url",
+    "text_original",
+    "text_display",
+    "like_count",
+    "reply_count",
+    "published_at",
+    "updated_at",
+]
+
+
+def _comment_to_csv_row(c, collection) -> dict:
+    return {
+        "video_id": collection.video_id,
+        "video_title": collection.video_title or "",
+        "video_channel_id": collection.video_channel_id or "",
+        "video_channel_title": collection.video_channel_title or "",
+        "video_published_at": (
+            collection.video_published_at.isoformat()
+            if collection.video_published_at
+            else ""
+        ),
+        "video_view_count": collection.video_view_count or "",
+        "video_like_count": collection.video_like_count or "",
+        "video_comment_count": collection.video_comment_count or "",
+        "comment_id": c.comment_id,
+        "parent_id": c.parent_id or "",
+        "author_display_name": c.author_display_name,
+        "author_channel_id": c.author_channel_id or "",
+        "author_channel_published_at": (
+            c.author_channel_published_at.isoformat()
+            if c.author_channel_published_at
+            else ""
+        ),
+        "author_profile_image_url": c.author_profile_image_url or "",
+        "author_channel_url": c.author_channel_url or "",
+        "text_original": c.text_original,
+        "text_display": c.text_display or "",
+        "like_count": c.like_count,
+        "reply_count": c.reply_count,
+        "published_at": c.published_at.isoformat(),
+        "updated_at": c.updated_at.isoformat(),
+    }
+
+
+def _comment_to_json_dict(c) -> dict:
+    return {
+        "comment_id": c.comment_id,
+        "parent_id": c.parent_id,
+        "author_display_name": c.author_display_name,
+        "author_channel_id": c.author_channel_id,
+        "author_channel_published_at": (
+            c.author_channel_published_at.isoformat()
+            if c.author_channel_published_at
+            else None
+        ),
+        "author_profile_image_url": c.author_profile_image_url,
+        "author_channel_url": c.author_channel_url,
+        "text_original": c.text_original,
+        "text_display": c.text_display,
+        "like_count": c.like_count,
+        "reply_count": c.reply_count,
+        "published_at": c.published_at.isoformat(),
+        "updated_at": c.updated_at.isoformat(),
+    }
+
+
 @router.get("/{collection_id}/export")
 def export_endpoint(
     collection_id: uuid.UUID,
@@ -141,87 +235,33 @@ def export_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     collection = get_collection_status(db, collection_id)
-    comments = export_comments(db, collection_id)
     video_id = collection.video_id
 
     if fmt == "csv":
-        output = io.StringIO()
-        writer = csv.DictWriter(
-            output,
-            fieldnames=[
-                "video_id",
-                "video_title",
-                "video_channel_id",
-                "video_channel_title",
-                "video_published_at",
-                "video_view_count",
-                "video_like_count",
-                "video_comment_count",
-                "comment_id",
-                "parent_id",
-                "author_display_name",
-                "author_channel_id",
-                "author_channel_published_at",
-                "author_profile_image_url",
-                "author_channel_url",
-                "text_original",
-                "text_display",
-                "like_count",
-                "reply_count",
-                "published_at",
-                "updated_at",
-            ],
-        )
-        writer.writeheader()
-        for c in comments:
-            writer.writerow(
-                {
-                    "video_id": collection.video_id,
-                    "video_title": collection.video_title or "",
-                    "video_channel_id": collection.video_channel_id or "",
-                    "video_channel_title": collection.video_channel_title or "",
-                    "video_published_at": (
-                        collection.video_published_at.isoformat()
-                        if collection.video_published_at
-                        else ""
-                    ),
-                    "video_view_count": collection.video_view_count or "",
-                    "video_like_count": collection.video_like_count or "",
-                    "video_comment_count": collection.video_comment_count or "",
-                    "comment_id": c.comment_id,
-                    "parent_id": c.parent_id or "",
-                    "author_display_name": c.author_display_name,
-                    "author_channel_id": c.author_channel_id or "",
-                    "author_channel_published_at": (
-                        c.author_channel_published_at.isoformat()
-                        if c.author_channel_published_at
-                        else ""
-                    ),
-                    "author_profile_image_url": c.author_profile_image_url or "",
-                    "author_channel_url": c.author_channel_url or "",
-                    "text_original": c.text_original,
-                    "text_display": c.text_display or "",
-                    "like_count": c.like_count,
-                    "reply_count": c.reply_count,
-                    "published_at": c.published_at.isoformat(),
-                    "updated_at": c.updated_at.isoformat(),
-                }
-            )
-        content = output.getvalue()
-        content_bytes = content.encode("utf-8-sig")  # BOM para compatibilidade Excel
+        def csv_stream():
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=_CSV_FIELDS)
+            writer.writeheader()
+            # BOM para compatibilidade Excel
+            yield "\ufeff" + output.getvalue()
+            for c in export_comments_iter(db, collection_id):
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=_CSV_FIELDS)
+                writer.writerow(_comment_to_csv_row(c, collection))
+                yield output.getvalue()
+
         return StreamingResponse(
-            io.BytesIO(content_bytes),
+            csv_stream(),
             media_type="text/csv",
             headers={
                 "Content-Disposition": (
                     f'attachment; filename="{video_id}_comments.csv"'
                 ),
-                "Content-Length": str(len(content_bytes)),
             },
         )
 
-    data = {
-        "video": {
+    def json_stream():
+        video = {
             "id": collection.video_id,
             "title": collection.video_title,
             "channel_id": collection.video_channel_id,
@@ -234,37 +274,23 @@ def export_endpoint(
             "view_count": collection.video_view_count,
             "like_count": collection.video_like_count,
             "comment_count": collection.video_comment_count,
-        },
-        "comments": [
-            {
-                "comment_id": c.comment_id,
-                "parent_id": c.parent_id,
-                "author_display_name": c.author_display_name,
-                "author_channel_id": c.author_channel_id,
-                "author_channel_published_at": (
-                    c.author_channel_published_at.isoformat()
-                    if c.author_channel_published_at
-                    else None
-                ),
-                "author_profile_image_url": c.author_profile_image_url,
-                "author_channel_url": c.author_channel_url,
-                "text_original": c.text_original,
-                "text_display": c.text_display,
-                "like_count": c.like_count,
-                "reply_count": c.reply_count,
-                "published_at": c.published_at.isoformat(),
-                "updated_at": c.updated_at.isoformat(),
-            }
-            for c in comments
-        ],
-    }
-    content_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        }
+        yield '{\n  "video": ' + json.dumps(video, ensure_ascii=False) + ',\n'
+        yield '  "comments": [\n'
+        first = True
+        for c in export_comments_iter(db, collection_id):
+            prefix = "    " if first else ",\n    "
+            first = False
+            yield prefix + json.dumps(
+                _comment_to_json_dict(c), ensure_ascii=False
+            )
+        yield "\n  ]\n}\n"
+
     return StreamingResponse(
-        io.BytesIO(content_bytes),
+        json_stream(),
         media_type="application/json",
         headers={
-            "Content-Disposition": (f'attachment; filename="{video_id}_comments.json"'),
-            "Content-Length": str(len(content_bytes)),
+            "Content-Disposition": f'attachment; filename="{video_id}_comments.json"',
         },
     )
 

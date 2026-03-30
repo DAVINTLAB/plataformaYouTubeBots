@@ -64,6 +64,24 @@ class ImportRequest(BaseModel):
 
     video: ImportVideoMeta
     comments: list[ImportComment] = Field(min_length=1)
+    done: bool = True  # False = mais chunks virão via /import-chunk
+
+
+class ImportChunkRequest(BaseModel):
+    """Batch adicional de comentários para uma coleta já criada via import."""
+
+    collection_id: uuid.UUID
+    comments: list[ImportComment] = Field(min_length=1)
+    done: bool = False
+
+
+class ImportChunkResponse(BaseModel):
+    collection_id: uuid.UUID
+    total_comments: int
+    chunk_received: int
+    done: bool
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Enrich ──────────────────────────────────────────────────────────────────
@@ -86,7 +104,7 @@ class EnrichResponse(BaseModel):
 class CollectionStarted(BaseModel):
     collection_id: uuid.UUID
     video_id: str
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "failed", "importing"]
     total_comments: int | None = None
     next_page_token: str | None = None
     channel_dates_failed: bool | None = None
@@ -101,7 +119,7 @@ class CollectionStatus(BaseModel):
     collection_id: uuid.UUID
     video_id: str
     video_title: str | None = None
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "failed", "importing"]
     total_comments: int | None = None
     channel_dates_failed: bool | None = None
     enrich_status: str | None = None
@@ -116,7 +134,7 @@ class CollectionSummary(BaseModel):
     collection_id: uuid.UUID
     video_id: str
     video_title: str | None = None
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "failed", "importing"]
     total_comments: int | None = None
     channel_dates_failed: bool | None = None
     enrich_status: str | None = None

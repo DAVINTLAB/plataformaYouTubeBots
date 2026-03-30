@@ -75,11 +75,13 @@ export function CollectPage() {
     enrichPhase,
     enrichRemaining,
     enrichDone,
+    importProgress,
     startCollection,
     resumeCollection,
     importCollection,
     deleteCollection,
     clearActive,
+    restoreFromList,
   } = useCollect();
 
   // ─── Coletar via API ───────────────────────────────────────────────
@@ -434,12 +436,25 @@ export function CollectPage() {
                 {importParseError && <div className="alert alert-error">{importParseError}</div>}
                 {error && <div className="alert alert-error">{error}</div>}
 
+                {importProgress && (
+                  <div className="flex flex-col gap-1.5">
+                    <ProgressBar
+                      percent={Math.round((importProgress.sent / importProgress.total) * 100)}
+                      label={`${importProgress.sent.toLocaleString("pt-BR")} / ${importProgress.total.toLocaleString("pt-BR")} comentários`}
+                    />
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   className="btn btn-primary btn-full"
                   disabled={loading || !importFile}
                 >
-                  {loading ? "Importando…" : "Importar Comentários"}
+                  {loading
+                    ? importProgress
+                      ? "Importando…"
+                      : "Lendo arquivo…"
+                    : "Importar Comentários"}
                 </button>
               </form>
             </div>
@@ -816,6 +831,18 @@ export function CollectPage() {
                       </td>
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-3">
+                          {(col.status === "running" ||
+                            (col.status === "completed" &&
+                              col.enrich_status !== "done" &&
+                              col.enrich_status !== null)) &&
+                            col.collection_id !== active?.collection_id && (
+                              <button
+                                className="text-xs font-medium text-davint-400 hover:text-davint-500 hover:underline transition-colors"
+                                onClick={() => void restoreFromList(col.collection_id)}
+                              >
+                                Retomar
+                              </button>
+                            )}
                           {col.status === "completed" &&
                             (downloadState?.id === col.collection_id ? (
                               <div className="w-20">
@@ -849,7 +876,8 @@ export function CollectPage() {
                       </td>
                       <td className="py-3 pr-6 text-right">
                         {col.status !== "running" &&
-                          col.collection_id !== active?.collection_id && (
+                          col.status !== "importing" &&
+                          !(isActivelyPolling && col.collection_id === active?.collection_id) && (
                             <button
                               className="text-xs font-medium text-red-400 hover:text-red-600 transition-colors"
                               onClick={() => {
