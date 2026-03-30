@@ -51,6 +51,22 @@ class DatasetImport(BaseModel):
     dataset: DatasetImportMeta
     users: list[DatasetImportUser] = Field(min_length=1)
     comments: list | None = None  # ignorado no import — comments já estão na coleta
+    done: bool = True
+
+
+class DatasetImportChunk(BaseModel):
+    """Batch adicional de usuários para um dataset já criado via import."""
+
+    dataset_id: uuid.UUID
+    users: list[DatasetImportUser] = Field(min_length=1)
+    done: bool = False
+
+
+class DatasetImportChunkResponse(BaseModel):
+    dataset_id: uuid.UUID
+    total_users: int
+    chunk_received: int
+    done: bool
 
 
 # ─── Response — Preview ──────────────────────────────────────────────────────

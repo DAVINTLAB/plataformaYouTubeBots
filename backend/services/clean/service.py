@@ -338,6 +338,45 @@ def import_dataset(
     return dataset
 
 
+def import_dataset_chunk(
+    db: Session,
+    dataset_id: uuid.UUID,
+    users: list,
+    done: bool,
+) -> dict:
+    """Adiciona batch de usuários a um dataset já criado via import."""
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if dataset is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="Dataset não encontrado.",
+        )
+
+    entries = [
+        DatasetEntry(
+            dataset_id=dataset.id,
+            author_channel_id=u.author_channel_id,
+            author_display_name=u.author_display_name,
+            comment_count=u.comment_count,
+            matched_criteria=u.matched_criteria,
+        )
+        for u in users
+    ]
+    db.add_all(entries)
+    db.commit()
+
+    total = db.query(DatasetEntry).filter(DatasetEntry.dataset_id == dataset_id).count()
+    dataset.total_users_selected = total
+    db.commit()
+
+    return {
+        "dataset_id": dataset.id,
+        "total_users": total,
+        "chunk_received": len(users),
+        "done": done,
+    }
+
+
 # ─── Listagem e download ────────────────────────────────────────────────────
 
 

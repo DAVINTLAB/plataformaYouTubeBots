@@ -9,10 +9,12 @@ from models.user import User
 from schemas.annotate import (
     AnnotationCreate,
     AnnotationImport,
+    AnnotationImportChunk,
     AnnotationResult,
     AnnotatorProgress,
     DatasetProgress,
     DatasetUsersResponse,
+    ImportChunkResponse,
     ImportResult,
     UserCommentsResponse,
 )
@@ -23,6 +25,7 @@ from services.annotate import (
     get_entry_comments,
     get_my_progress,
     import_annotations,
+    import_annotations_chunk,
     list_dataset_users,
     upsert_annotation,
 )
@@ -118,6 +121,18 @@ def import_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     return import_annotations(db, current_user.id, payload.annotations)
+
+
+@router.post("/import-chunk", response_model=ImportChunkResponse)
+def import_chunk_endpoint(
+    payload: AnnotationImportChunk,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = import_annotations_chunk(
+        db, current_user.id, payload.annotations, payload.done
+    )
+    return ImportChunkResponse(**result)
 
 
 # ─── Export ──────────────────────────────────────────────────────────────────

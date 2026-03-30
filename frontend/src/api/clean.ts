@@ -108,7 +108,7 @@ export const cleanApi = {
   delete: (datasetId: string, token: string) =>
     request<void>(`/clean/datasets/${datasetId}`, { method: "DELETE" }, token),
 
-  import: (
+  import: async (
     data: {
       dataset: { name: string; video_id: string; criteria_applied: string[] };
       users: Array<{
@@ -118,11 +118,56 @@ export const cleanApi = {
         matched_criteria: string[];
       }>;
     },
-    token: string
-  ) =>
-    request<DatasetResponse>(
+    token: string,
+    onProgress?: (sent: number, total: number) => void
+  ): Promise<DatasetResponse> => {
+    const CHUNK_SIZE = 2000;
+    const allUsers = data.users;
+    const total = allUsers.length;
+    const firstBatch = allUsers.slice(0, CHUNK_SIZE);
+    const hasMore = total > CHUNK_SIZE;
+
+    const result = await request<DatasetResponse>(
       "/clean/import",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          dataset: data.dataset,
+          users: firstBatch,
+          done: !hasMore,
+        }),
+      },
       token
-    ),
+    );
+    onProgress?.(firstBatch.length, total);
+
+    if (!hasMore) return result;
+
+    let offset = CHUNK_SIZE;
+    while (offset < total) {
+      const chunk = allUsers.slice(offset, offset + CHUNK_SIZE);
+      const isLast = offset + chunk.length >= total;
+      await request<{
+        dataset_id: string;
+        total_users: number;
+        chunk_received: number;
+        done: boolean;
+      }>(
+        "/clean/import-chunk",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            dataset_id: result.dataset_id,
+            users: chunk,
+            done: isLast,
+          }),
+        },
+        token
+      );
+      offset += chunk.length;
+      onProgress?.(offset, total);
+    }
+
+    return result;
+  },
 };

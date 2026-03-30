@@ -109,7 +109,7 @@ export const annotateApi = {
 
   allProgress: (token: string) => request<AnnotatorProgress[]>("/annotate/all-progress", {}, token),
 
-  importAnnotations: (
+  importAnnotations: async (
     data: {
       dataset_id?: string;
       dataset_name?: string;
@@ -120,13 +120,64 @@ export const annotateApi = {
         justificativa?: string | null;
       }>;
     },
-    token: string
-  ) =>
-    request<ImportResult>(
+    token: string,
+    onProgress?: (sent: number, total: number) => void
+  ): Promise<ImportResult> => {
+    const CHUNK_SIZE = 2000;
+    const all = data.annotations;
+    const total = all.length;
+    const firstBatch = all.slice(0, CHUNK_SIZE);
+    const hasMore = total > CHUNK_SIZE;
+
+    const result = await request<ImportResult>(
       "/annotate/import",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...data,
+          annotations: firstBatch,
+          done: !hasMore,
+        }),
+      },
       token
-    ),
+    );
+    onProgress?.(firstBatch.length, total);
+
+    if (!hasMore) return result;
+
+    let offset = CHUNK_SIZE;
+    let totalImported = result.imported;
+    let totalUpdated = result.updated;
+
+    while (offset < total) {
+      const chunk = all.slice(offset, offset + CHUNK_SIZE);
+      const isLast = offset + chunk.length >= total;
+      const chunkResult = await request<{
+        total_imported: number;
+        total_updated: number;
+        chunk_received: number;
+        done: boolean;
+      }>(
+        "/annotate/import-chunk",
+        {
+          method: "POST",
+          body: JSON.stringify({ annotations: chunk, done: isLast }),
+        },
+        token
+      );
+      totalImported += chunkResult.total_imported;
+      totalUpdated += chunkResult.total_updated;
+      offset += chunk.length;
+      onProgress?.(offset, total);
+    }
+
+    return {
+      imported: totalImported,
+      updated: totalUpdated,
+      skipped: result.skipped,
+      errors: result.errors,
+    };
+  },
 
   downloadExport: async (
     format: "json" | "csv",

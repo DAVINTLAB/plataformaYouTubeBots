@@ -32,6 +32,21 @@ class AnnotationImport(BaseModel):
     dataset_name: str | None = None
     video_id: str | None = None
     annotations: list[AnnotationImportItem] = Field(min_length=1)
+    done: bool = True
+
+
+class AnnotationImportChunk(BaseModel):
+    """Batch adicional de anotações para import paginado."""
+
+    annotations: list[AnnotationImportItem] = Field(min_length=1)
+    done: bool = False
+
+
+class ImportChunkResponse(BaseModel):
+    total_imported: int
+    total_updated: int
+    chunk_received: int
+    done: bool
 
 
 # ─── Response ────────────────────────────────────────────────────────────────

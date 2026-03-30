@@ -455,6 +455,22 @@ def import_annotations(
     }
 
 
+def import_annotations_chunk(
+    db: Session,
+    annotator_id: uuid.UUID,
+    annotations: list,
+    done: bool,
+) -> dict:
+    """Batch adicional de anotações para import paginado."""
+    result = import_annotations(db, annotator_id, annotations)
+    return {
+        "total_imported": result["imported"],
+        "total_updated": result["updated"],
+        "chunk_received": len(annotations),
+        "done": done,
+    }
+
+
 # ─── Export de anotações (JSON streaming) ───────────────────────────────────
 
 
