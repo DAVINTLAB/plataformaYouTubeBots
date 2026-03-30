@@ -363,7 +363,7 @@ def get_stats(db: Session) -> dict:
 
 def export_review_json(
     db: Session,
-    dataset_id: uuid.UUID | None = None,
+    dataset_id: uuid.UUID,
 ):
     """Gerador de JSON streaming com dataset final (anotado + desempatado)."""
     ds_query = db.query(Dataset)
@@ -474,7 +474,7 @@ def export_review_json(
 
 def export_review_csv(
     db: Session,
-    dataset_id: uuid.UUID | None = None,
+    dataset_id: uuid.UUID,
 ):
     """Gerador de CSV streaming com dataset final."""
     import csv

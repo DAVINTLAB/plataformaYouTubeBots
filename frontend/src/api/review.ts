@@ -205,11 +205,11 @@ export const reviewApi = {
   downloadExport: async (
     format: "json" | "csv",
     token: string,
-    datasetId?: string
+    datasetId: string
   ): Promise<void> => {
     const qs = new URLSearchParams();
     qs.set("format", format);
-    if (datasetId) qs.set("dataset_id", datasetId);
+    qs.set("dataset_id", datasetId);
 
     const res = await fetch(`${API_URL}/review/export?${qs}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -218,11 +218,17 @@ export const reviewApi = {
       const body = (await res.json().catch(() => ({}))) as { detail?: string };
       throw new ApiError(body.detail ?? "Erro ao exportar revisão.", res.status);
     }
+
+    // Use filename from Content-Disposition if available
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = cd.match(/filename="(.+?)"/);
+    const filename = filenameMatch ? filenameMatch[1] : `review.${format}`;
+
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `review.${format}`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   },

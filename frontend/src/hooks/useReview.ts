@@ -171,7 +171,7 @@ export function useReview() {
   );
 
   const downloadExport = useCallback(
-    async (format: "json" | "csv", datasetId?: string) => {
+    async (format: "json" | "csv", datasetId: string) => {
       if (!token) return;
       try {
         await reviewApi.downloadExport(format, token, datasetId);

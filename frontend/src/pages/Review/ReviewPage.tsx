@@ -236,22 +236,24 @@ export function ReviewPage() {
               ))}
             </select>
 
-            {tab === "conflicts" && (
-              <div className="ml-auto flex gap-2">
-                <button
-                  className="text-xs font-medium text-davint-400 hover:underline"
-                  onClick={() => downloadExport("json")}
-                >
-                  Exportar JSON
-                </button>
-                <button
-                  className="text-xs font-medium text-davint-400 hover:underline"
-                  onClick={() => downloadExport("csv")}
-                >
-                  Exportar CSV
-                </button>
-              </div>
-            )}
+            <div className="ml-auto flex gap-2">
+              <button
+                className="text-xs font-medium text-davint-400 hover:underline disabled:text-gray-300 disabled:no-underline"
+                disabled={!datasetFilter}
+                title={datasetFilter ? "" : "Selecione um dataset para exportar"}
+                onClick={() => downloadExport("json", datasetFilter)}
+              >
+                Exportar JSON
+              </button>
+              <button
+                className="text-xs font-medium text-davint-400 hover:underline disabled:text-gray-300 disabled:no-underline"
+                disabled={!datasetFilter}
+                title={datasetFilter ? "" : "Selecione um dataset para exportar"}
+                onClick={() => downloadExport("csv", datasetFilter)}
+              >
+                Exportar CSV
+              </button>
+            </div>
           </div>
         )}
 

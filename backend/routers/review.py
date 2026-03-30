@@ -1,10 +1,11 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
+from models.dataset import Dataset
 from models.user import User
 from schemas.review import (
     BotCommentItem,
@@ -103,17 +104,23 @@ def stats_endpoint(
 
 @router.get("/export")
 def export_endpoint(
-    dataset_id: uuid.UUID | None = Query(default=None),
+    dataset_id: uuid.UUID = Query(),
     fmt: str = Query(default="json", alias="format"),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Dataset não encontrado.")
+
+    safe_name = dataset.name.replace(" ", "_")
+
     if fmt == "csv":
         return StreamingResponse(
             export_review_csv(db, dataset_id),
             media_type="text/csv",
             headers={
-                "Content-Disposition": 'attachment; filename="review.csv"',
+                "Content-Disposition": f'attachment; filename="review_{safe_name}.csv"',
             },
         )
 
@@ -121,7 +128,7 @@ def export_endpoint(
         export_review_json(db, dataset_id),
         media_type="application/json",
         headers={
-            "Content-Disposition": 'attachment; filename="review.json"',
+            "Content-Disposition": f'attachment; filename="review_{safe_name}.json"',
         },
     )
 
