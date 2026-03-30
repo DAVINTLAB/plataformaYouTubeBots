@@ -18,6 +18,8 @@ ignore = [
 
 [lint.per-file-ignores]
 "tests/**" = ["S", "B", "E501"]
+"services/seed.py" = ["S311"]  # random é para dados mockados, não criptografia
+"scripts/**" = ["S311"]  # random é para dados mockados, não criptografia
 
 [format]
 quote-style = "double"

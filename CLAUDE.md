@@ -137,6 +137,18 @@ cd frontend && npm run dev                  # dev local
 cd frontend && npm run build               # build produção
 ```
 
+## Ferramentas CLI — caminhos no Windows
+
+As ferramentas de desenvolvimento **não estão no PATH do bash** por padrão. Usar sempre o caminho completo ou ativar o venv:
+
+| Ferramenta | Como usar |
+|---|---|
+| `ruff`, `bandit`, `pytest`, `alembic` | Ativar venv antes: `source backend/.venv/Scripts/activate` |
+| `gh` (GitHub CLI) | Caminho completo: `"/c/Program Files/GitHub CLI/gh.exe"` |
+| `npx`, `npm` | Disponíveis no PATH global (Node.js instalado no sistema) |
+
+**Regra:** nunca usar `python -m ruff` com o Python global — sempre ativar o venv do backend primeiro.
+
 ## Variáveis de ambiente
 
 ```env

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { request } from "../../api/http";
 import { usersApi } from "../../api/users";
 import { PageHeader } from "../../components/PageHeader";
 import { useAuthContext } from "../../contexts/AuthContext";
@@ -159,7 +160,7 @@ const PIPELINE_STAGES: StageCard[] = [
       "Classifique comentários individualmente como bot ou humano. Progresso salvo automaticamente.",
     route: "/annotate",
     adminOnly: false,
-    available: false,
+    available: true,
     icon: <IconTag />,
   },
   {
@@ -272,6 +273,46 @@ export function HomePage() {
   const { user, isAdmin, token } = useAuthContext();
   const navigate = useNavigate();
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [seedLoading, setSeedLoading] = useState(false);
+  const [seedResult, setSeedResult] = useState<string | null>(null);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  const handleSeed = async () => {
+    if (!token) return;
+    setSeedLoading(true);
+    setSeedResult(null);
+    setSeedError(null);
+    try {
+      const data = await request<{ message: string; total_comments: number; total_bots: number }>(
+        "/seed",
+        { method: "POST" },
+        token
+      );
+      setSeedResult(
+        `${data.message} (${data.total_comments} comentários, ${data.total_bots} bots)`
+      );
+    } catch (err) {
+      setSeedError(err instanceof Error ? err.message : "Erro ao executar seed.");
+    } finally {
+      setSeedLoading(false);
+    }
+  };
+
+  const handleDeleteSeed = async () => {
+    if (!token || !window.confirm("Tem certeza que deseja deletar todos os dados mockados?"))
+      return;
+    setSeedLoading(true);
+    setSeedResult(null);
+    setSeedError(null);
+    try {
+      const data = await request<{ message: string }>("/seed", { method: "DELETE" }, token);
+      setSeedResult(data.message);
+    } catch (err) {
+      setSeedError(err instanceof Error ? err.message : "Erro ao deletar seed.");
+    } finally {
+      setSeedLoading(false);
+    }
+  };
 
   const pipelineStages = PIPELINE_STAGES;
 
@@ -322,6 +363,51 @@ export function HomePage() {
               {ADMIN_CARDS.map((stage) => (
                 <Card key={stage.route} stage={stage} onClick={() => navigate(stage.route)} />
               ))}
+            </div>
+
+            {/* Seed */}
+            <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-700 mb-1">Dados de teste</h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Popula o banco com uma coleta mockada (30 usuários, 18 bots) e um dataset pronto
+                para anotação.
+              </p>
+              {seedResult && (
+                <div className="flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg mb-3">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                    className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <p className="text-xs text-green-700">{seedResult}</p>
+                </div>
+              )}
+              {seedError && <div className="alert alert-error mb-3">{seedError}</div>}
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={seedLoading}
+                  onClick={handleSeed}
+                >
+                  {seedLoading ? "Gerando..." : "Gerar dados mockados"}
+                </button>
+                <button
+                  className="btn btn-danger btn-sm"
+                  disabled={seedLoading}
+                  onClick={handleDeleteSeed}
+                >
+                  {seedLoading ? "Deletando..." : "Deletar dados mockados"}
+                </button>
+              </div>
             </div>
           </section>
         )}
