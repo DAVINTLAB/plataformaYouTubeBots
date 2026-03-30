@@ -16,11 +16,13 @@ jobs:
             echo "Não é PR para main — check ignorado."
             exit 0
           fi
-          if [ "${{ github.head_ref }}" != "dev" ]; then
-            echo "::error::PRs para main devem vir da branch dev, não de '${{ github.head_ref }}'."
-            exit 1
+          HEAD="${{ github.head_ref }}"
+          if [ "$HEAD" = "dev" ] || [[ "$HEAD" == hotfix/* ]]; then
+            echo "PR de '$HEAD' para main — permitido."
+            exit 0
           fi
-          echo "PR de dev para main — permitido."
+          echo "::error::PRs para main devem vir de 'dev' ou 'hotfix/*', não de '$HEAD'."
+          exit 1
 
   backend:
     runs-on: ubuntu-latest
