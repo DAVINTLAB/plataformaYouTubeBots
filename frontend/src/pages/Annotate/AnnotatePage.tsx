@@ -81,7 +81,9 @@ export function AnnotatePage() {
     async (commentDbId: string, label: "bot" | "humano", justificativa?: string | null) => {
       const result = await submitAnnotation(commentDbId, label, justificativa);
       if (result?.conflict_created) {
-        setToast("Conflito detectado: outro pesquisador classificou este comentário de forma diferente.");
+        setToast(
+          "Conflito detectado: outro pesquisador classificou este comentário de forma diferente."
+        );
         setTimeout(() => setToast(null), 5000);
       }
     },
@@ -138,13 +140,9 @@ export function AnnotatePage() {
 
   // ─── Derived ────────────────────────────────────────────────────────
   const datasetProgress = progress.find((p) => p.dataset_id === selectedDatasetId);
-  const globalPercent = datasetProgress
-    ? datasetProgress.percent_complete
-    : 0;
+  const globalPercent = datasetProgress ? datasetProgress.percent_complete : 0;
 
-  const totalUsersPages = datasetUsers
-    ? Math.ceil(datasetUsers.items.length / USERS_PER_PAGE)
-    : 0;
+  const totalUsersPages = datasetUsers ? Math.ceil(datasetUsers.items.length / USERS_PER_PAGE) : 0;
   const paginatedUsers = useMemo(() => {
     if (!datasetUsers) return [];
     const start = usersPage * USERS_PER_PAGE;
@@ -153,24 +151,33 @@ export function AnnotatePage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <PageHeader
-        breadcrumbs={[{ label: "Início", to: "/" }, { label: "Anotação" }]}
-      />
+      <PageHeader breadcrumbs={[{ label: "Início", to: "/" }, { label: "Anotação" }]} />
 
       <main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">
         <h1 className="text-2xl font-bold text-gray-800 tracking-tight mb-1">
           Anotação de Comentários
         </h1>
         <p className="text-sm text-gray-500 mb-6">
-          Classifique cada comentário como bot ou humano. Veja todos os
-          comentários do usuário para tomar uma decisão informada.
+          Classifique cada comentário como bot ou humano. Veja todos os comentários do usuário para
+          tomar uma decisão informada.
         </p>
 
         {/* Toast (conflito) */}
         {toast && (
           <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+              />
             </svg>
             <p className="text-xs text-yellow-700">{toast}</p>
           </div>
@@ -189,13 +196,25 @@ export function AnnotatePage() {
         {/* Import result */}
         {importResult && (
           <div className="flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             <div>
               <p className="text-sm font-semibold text-green-800">Importação concluída!</p>
               <p className="text-xs text-green-700 mt-0.5">
-                {importResult.imported} criadas, {importResult.updated} atualizadas, {importResult.skipped} ignoradas.
+                {importResult.imported} criadas, {importResult.updated} atualizadas,{" "}
+                {importResult.skipped} ignoradas.
               </p>
               {importResult.errors.length > 0 && (
                 <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
@@ -217,11 +236,24 @@ export function AnnotatePage() {
         {/* Aviso admin */}
         {isAdmin && (
           <div className="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+              />
             </svg>
             <p className="text-xs text-orange-700">
-              <span className="font-semibold">Modo visualização.</span> Administradores podem consultar os comentários e o progresso dos datasets, mas não podem anotar. Use a etapa de Revisão para desempatar conflitos.
+              <span className="font-semibold">Modo visualização.</span> Administradores podem
+              consultar os comentários e o progresso dos datasets, mas não podem anotar. Use a etapa
+              de Revisão para desempatar conflitos.
             </p>
           </div>
         )}
@@ -268,18 +300,15 @@ export function AnnotatePage() {
                   steps={[
                     {
                       label: "Selecione um dataset",
-                      description:
-                        "Escolha o dataset com os usuários suspeitos a serem anotados.",
+                      description: "Escolha o dataset com os usuários suspeitos a serem anotados.",
                     },
                     {
                       label: "Escolha um usuário",
-                      description:
-                        "Veja todos os comentários do usuário agrupados para contexto.",
+                      description: "Veja todos os comentários do usuário agrupados para contexto.",
                     },
                     {
                       label: "Classifique cada comentário",
-                      description:
-                        'Marque como "Bot" ou "Humano". Bot exige justificativa.',
+                      description: 'Marque como "Bot" ou "Humano". Bot exige justificativa.',
                     },
                   ]}
                 />
@@ -325,9 +354,7 @@ export function AnnotatePage() {
                 {datasetUsers && (
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                      <h2 className="text-sm font-semibold text-gray-700">
-                        Usuários do dataset
-                      </h2>
+                      <h2 className="text-sm font-semibold text-gray-700">Usuários do dataset</h2>
                       <div className="flex gap-2">
                         <button
                           className="text-xs font-medium text-davint-400 hover:underline"
@@ -364,9 +391,7 @@ export function AnnotatePage() {
                         {paginatedUsers.map((item) => {
                           const pct =
                             item.comment_count > 0
-                              ? Math.round(
-                                  (item.my_annotated_count / item.comment_count) * 100
-                                )
+                              ? Math.round((item.my_annotated_count / item.comment_count) * 100)
                               : 0;
                           const done = item.my_pending_count === 0;
                           return (
@@ -499,9 +524,7 @@ export function AnnotatePage() {
                   />
                 </div>
 
-                {importParseError && (
-                  <div className="alert alert-error">{importParseError}</div>
-                )}
+                {importParseError && <div className="alert alert-error">{importParseError}</div>}
 
                 <button
                   type="submit"
@@ -551,7 +574,10 @@ export function AnnotatePage() {
               <tbody>
                 {isAdmin
                   ? allProgress.map((p) => (
-                      <tr key={`${p.annotator_id}-${p.dataset_id}`} className="border-b border-gray-50">
+                      <tr
+                        key={`${p.annotator_id}-${p.dataset_id}`}
+                        className="border-b border-gray-50"
+                      >
                         <td className="px-6 py-3 text-sm font-medium text-gray-800">
                           {p.annotator_name}
                         </td>

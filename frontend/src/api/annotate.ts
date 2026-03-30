@@ -90,18 +90,10 @@ export interface AnnotatorProgress {
 
 export const annotateApi = {
   listUsers: (datasetId: string, token: string) =>
-    request<DatasetUsersResponse>(
-      `/annotate/users?dataset_id=${datasetId}`,
-      {},
-      token
-    ),
+    request<DatasetUsersResponse>(`/annotate/users?dataset_id=${datasetId}`, {}, token),
 
   getComments: (entryId: string, token: string) =>
-    request<UserCommentsResponse>(
-      `/annotate/comments/${entryId}`,
-      {},
-      token
-    ),
+    request<UserCommentsResponse>(`/annotate/comments/${entryId}`, {}, token),
 
   submit: (
     data: {
@@ -111,17 +103,11 @@ export const annotateApi = {
     },
     token: string
   ) =>
-    request<AnnotationResult>(
-      "/annotate",
-      { method: "POST", body: JSON.stringify(data) },
-      token
-    ),
+    request<AnnotationResult>("/annotate", { method: "POST", body: JSON.stringify(data) }, token),
 
-  myProgress: (token: string) =>
-    request<DatasetProgress[]>("/annotate/my-progress", {}, token),
+  myProgress: (token: string) => request<DatasetProgress[]>("/annotate/my-progress", {}, token),
 
-  allProgress: (token: string) =>
-    request<AnnotatorProgress[]>("/annotate/all-progress", {}, token),
+  allProgress: (token: string) => request<AnnotatorProgress[]>("/annotate/all-progress", {}, token),
 
   importAnnotations: (
     data: {

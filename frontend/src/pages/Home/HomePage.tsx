@@ -288,7 +288,9 @@ export function HomePage() {
         { method: "POST" },
         token
       );
-      setSeedResult(`${data.message} (${data.total_comments} comentários, ${data.total_bots} bots)`);
+      setSeedResult(
+        `${data.message} (${data.total_comments} comentários, ${data.total_bots} bots)`
+      );
     } catch (err) {
       setSeedError(err instanceof Error ? err.message : "Erro ao executar seed.");
     } finally {
@@ -297,7 +299,8 @@ export function HomePage() {
   };
 
   const handleDeleteSeed = async () => {
-    if (!token || !window.confirm("Tem certeza que deseja deletar todos os dados mockados?")) return;
+    if (!token || !window.confirm("Tem certeza que deseja deletar todos os dados mockados?"))
+      return;
     setSeedLoading(true);
     setSeedResult(null);
     setSeedError(null);
@@ -371,15 +374,24 @@ export function HomePage() {
               </p>
               {seedResult && (
                 <div className="flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg mb-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                    className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
                   </svg>
                   <p className="text-xs text-green-700">{seedResult}</p>
                 </div>
               )}
-              {seedError && (
-                <div className="alert alert-error mb-3">{seedError}</div>
-              )}
+              {seedError && <div className="alert alert-error mb-3">{seedError}</div>}
               <div className="flex gap-2">
                 <button
                   className="btn btn-ghost btn-sm"

@@ -13,11 +13,15 @@ interface Props {
   readOnly?: boolean;
 }
 
-export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, readOnly = false }: Props) {
+export function CommentAnnotationRow({
+  comment,
+  focused,
+  onAnnotate,
+  onFocus,
+  readOnly = false,
+}: Props) {
   const [showJustificativa, setShowJustificativa] = useState(false);
-  const [justificativa, setJustificativa] = useState(
-    comment.my_annotation?.justificativa ?? ""
-  );
+  const [justificativa, setJustificativa] = useState(comment.my_annotation?.justificativa ?? "");
   const [saving, setSaving] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
@@ -80,7 +84,9 @@ export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, re
       onClick={onFocus}
       className={[
         "p-4 rounded-lg border transition-all",
-        focused ? "border-davint-400 bg-davint-50/30 ring-1 ring-davint-400/20" : "border-gray-200 bg-white",
+        focused
+          ? "border-davint-400 bg-davint-50/30 ring-1 ring-davint-400/20"
+          : "border-gray-200 bg-white",
       ].join(" ")}
     >
       {/* Texto do comentário */}
@@ -101,9 +107,7 @@ export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, re
           <span
             className={[
               "text-[11px] font-semibold px-2.5 py-0.5 rounded-full",
-              currentLabel === "bot"
-                ? "bg-red-50 text-red-600"
-                : "bg-green-50 text-green-600",
+              currentLabel === "bot" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600",
             ].join(" ")}
           >
             {currentLabel === "bot" ? "Bot" : "Humano"}
@@ -123,8 +127,19 @@ export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, re
               onClick={handleHumano}
               title="Atalho: H"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+                className="w-3.5 h-3.5"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"
+                />
               </svg>
               Humano
             </button>
@@ -139,14 +154,59 @@ export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, re
               onClick={handleBotClick}
               title="Atalho: B"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
-                <rect x="4" y="8" width="16" height="12" rx="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className="w-3.5 h-3.5"
+              >
+                <rect
+                  x="4"
+                  y="8"
+                  width="16"
+                  height="12"
+                  rx="3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
                 <circle cx="9" cy="14" r="1.5" />
                 <circle cx="15" cy="14" r="1.5" />
-                <line x1="12" y1="4" x2="12" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <circle cx="12" cy="3" r="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                <line x1="1" y1="13" x2="4" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <line x1="20" y1="13" x2="23" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line
+                  x1="12"
+                  y1="4"
+                  x2="12"
+                  y2="8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <circle
+                  cx="12"
+                  cy="3"
+                  r="1.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <line
+                  x1="1"
+                  y1="13"
+                  x2="4"
+                  y2="13"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <line
+                  x1="20"
+                  y1="13"
+                  x2="23"
+                  y2="13"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
               </svg>
               Bot
             </button>
@@ -173,10 +233,7 @@ export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, re
             >
               {saving ? "Salvando..." : "Confirmar Bot"}
             </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setShowJustificativa(false)}
-            >
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowJustificativa(false)}>
               Cancelar
             </button>
           </div>
@@ -184,11 +241,14 @@ export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, re
       )}
 
       {/* Justificativa existente (readonly — pesquisador) */}
-      {!readOnly && currentLabel === "bot" && comment.my_annotation?.justificativa && !showJustificativa && (
-        <p className="mt-2 text-xs text-gray-500 italic">
-          Justificativa: {comment.my_annotation.justificativa}
-        </p>
-      )}
+      {!readOnly &&
+        currentLabel === "bot" &&
+        comment.my_annotation?.justificativa &&
+        !showJustificativa && (
+          <p className="mt-2 text-xs text-gray-500 italic">
+            Justificativa: {comment.my_annotation.justificativa}
+          </p>
+        )}
 
       {/* Admin: anotações de todos os pesquisadores */}
       {readOnly && comment.all_annotations && comment.all_annotations.length > 0 && (
@@ -199,17 +259,13 @@ export function CommentAnnotationRow({ comment, focused, onAnnotate, onFocus, re
               <span
                 className={[
                   "font-semibold px-2 py-0.5 rounded-full",
-                  ann.label === "bot"
-                    ? "bg-red-50 text-red-600"
-                    : "bg-green-50 text-green-600",
+                  ann.label === "bot" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600",
                 ].join(" ")}
               >
                 {ann.label === "bot" ? "Bot" : "Humano"}
               </span>
               {ann.justificativa && (
-                <span className="text-gray-400 italic truncate max-w-xs">
-                  {ann.justificativa}
-                </span>
+                <span className="text-gray-400 italic truncate max-w-xs">{ann.justificativa}</span>
               )}
             </div>
           ))}

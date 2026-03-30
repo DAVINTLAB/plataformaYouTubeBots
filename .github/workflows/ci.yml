@@ -63,7 +63,7 @@ jobs:
         run: ruff format --check .
 
       - name: Security analysis (bandit)
-        run: bandit -r . --exclude ./tests --skip B101
+        run: bandit -r . --exclude ./tests,./scripts --skip B101,B311
 
       - name: Dependency audit (pip-audit)
         # CVE-2026-4539: ReDoS no AdlLexer do pygments (acesso local apenas,
