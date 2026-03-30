@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { request } from "../../api/http";
 import { usersApi } from "../../api/users";
@@ -170,7 +170,7 @@ const PIPELINE_STAGES: StageCard[] = [
       "Resolva classificações divergentes entre anotadores. Toda divergência exige decisão explícita.",
     route: "/review",
     adminOnly: true,
-    available: false,
+    available: true,
     icon: <IconCheckCircle />,
   },
   {
@@ -200,10 +200,11 @@ const ADMIN_CARDS: StageCard[] = [
 interface CardProps {
   stage: StageCard;
   restricted?: boolean;
+  badge?: number;
   onClick: () => void;
 }
 
-function Card({ stage, restricted = false, onClick }: CardProps) {
+function Card({ stage, restricted = false, badge, onClick }: CardProps) {
   const clickable = stage.available && !restricted;
   return (
     <div
@@ -242,7 +243,14 @@ function Card({ stage, restricted = false, onClick }: CardProps) {
         <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
           {stage.step > 0 ? `Etapa ${stage.step}` : "Administração"}
         </p>
-        <h3 className="text-[15px] font-bold text-gray-800 mb-1.5">{stage.title}</h3>
+        <h3 className="text-[15px] font-bold text-gray-800 mb-1.5">
+          {stage.title}
+          {badge !== undefined && badge > 0 && (
+            <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-bold rounded-full bg-yellow-100 text-yellow-700">
+              Pendentes
+            </span>
+          )}
+        </h3>
         <p className="text-sm text-gray-500 leading-relaxed">{stage.description}</p>
       </div>
 
@@ -276,6 +284,17 @@ export function HomePage() {
   const [seedLoading, setSeedLoading] = useState(false);
   const [seedResult, setSeedResult] = useState<string | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [pendingConflicts, setPendingConflicts] = useState(0);
+
+  useEffect(() => {
+    if (!isAdmin || !token) return;
+    import("../../api/review").then(({ reviewApi }) =>
+      reviewApi
+        .stats(token)
+        .then((s) => setPendingConflicts(s.pending_conflicts))
+        .catch(() => {})
+    );
+  }, [isAdmin, token]);
 
   const handleSeed = async () => {
     if (!token) return;
@@ -346,6 +365,7 @@ export function HomePage() {
                 <Card
                   stage={stage}
                   restricted={stage.adminOnly && !isAdmin}
+                  badge={stage.route === "/review" && isAdmin ? pendingConflicts : undefined}
                   onClick={() => navigate(stage.route)}
                 />
               </div>

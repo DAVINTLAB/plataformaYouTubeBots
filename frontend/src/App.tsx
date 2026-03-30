@@ -6,6 +6,7 @@ import { AnnotatePage } from "./pages/Annotate/AnnotatePage";
 import { CleanPage } from "./pages/Clean/CleanPage";
 import { CollectPage } from "./pages/Collect/CollectPage";
 import { HomePage } from "./pages/Home/HomePage";
+import { ReviewPage } from "./pages/Review/ReviewPage";
 import { UsersPage } from "./pages/Users/UsersPage";
 
 export function App() {
@@ -17,6 +18,7 @@ export function App() {
 
           <Route element={<ProtectedRoute requireAdmin />}>
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/review" element={<ReviewPage />} />
           </Route>
 
           <Route element={<ProtectedRoute />}>
