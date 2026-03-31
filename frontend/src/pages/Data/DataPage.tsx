@@ -393,13 +393,11 @@ function AnnotationDetail({
 
 function TrainingDetail({
   ds,
-  isAdmin,
   onExport,
   onDelete,
   onClose,
 }: {
   ds: DataAnnotationProgress;
-  isAdmin: boolean;
   onExport: (format: "json" | "csv") => void;
   onDelete: () => void;
   onClose: () => void;
@@ -444,20 +442,12 @@ function TrainingDetail({
       </div>
 
       <div className="flex items-center gap-2">
-        {isAdmin ? (
-          <>
-            <button className="btn btn-ghost btn-sm" onClick={() => onExport("json")}>
-              Exportar JSON
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => onExport("csv")}>
-              Exportar CSV
-            </button>
-          </>
-        ) : (
-          <p className="text-xs text-gray-400">
-            O export do dataset final é restrito a administradores.
-          </p>
-        )}
+        <button className="btn btn-ghost btn-sm" onClick={() => onExport("json")}>
+          Exportar JSON
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={() => onExport("csv")}>
+          Exportar CSV
+        </button>
         <button className="btn btn-danger btn-sm ml-auto" onClick={onDelete}>
           Deletar dataset
         </button>
@@ -473,7 +463,7 @@ const TH_CLS = "text-[11px] font-bold uppercase tracking-wider text-gray-400 pb-
 // ─── DataPage ───────────────────────────────────────────────────────────────
 
 export function DataPage() {
-  const { token, isAdmin } = useAuthContext();
+  const { token } = useAuthContext();
   const {
     loading,
     error,
@@ -906,7 +896,6 @@ export function DataPage() {
                       return (
                         <TrainingDetail
                           ds={ds}
-                          isAdmin={isAdmin}
                           onExport={(fmt) =>
                             withErrorHandling(
                               () => exportReview(ds.dataset_id, fmt),

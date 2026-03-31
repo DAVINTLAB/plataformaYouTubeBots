@@ -22,7 +22,7 @@ interface DataState {
 }
 
 export function useData() {
-  const { token, isAdmin } = useAuthContext();
+  const { token } = useAuthContext();
   const [state, setState] = useState<DataState>({
     loading: false,
     error: null,
@@ -103,10 +103,10 @@ export function useData() {
 
   const exportReview = useCallback(
     async (datasetId: string, format: "json" | "csv") => {
-      if (!token || !isAdmin) return;
+      if (!token) return;
       await reviewApi.downloadExport(format, token, datasetId);
     },
-    [token, isAdmin]
+    [token]
   );
 
   useEffect(() => {
