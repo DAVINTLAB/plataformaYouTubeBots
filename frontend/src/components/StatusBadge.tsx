@@ -7,6 +7,8 @@ const LABEL: Record<string, string> = {
   enriching_replies: "Coletando respostas",
   enriching_channels: "Coletando dados dos autores",
   enriching: "Enriquecendo dados",
+  done: "Concluído",
+  importing: "Importando",
 };
 
 const COLOR: Record<string, string> = {
@@ -18,6 +20,8 @@ const COLOR: Record<string, string> = {
   enriching_replies: "bg-purple-50 text-purple-700",
   enriching_channels: "bg-purple-50 text-purple-700",
   enriching: "bg-purple-50 text-purple-700",
+  done: "bg-green-50 text-green-600",
+  importing: "bg-blue-50 text-blue-700",
 };
 
 interface StatusBadgeProps {
