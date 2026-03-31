@@ -328,6 +328,9 @@ export function HomePage() {
   const { user, isAdmin, token } = useAuthContext();
   const navigate = useNavigate();
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showInfo, setShowInfo] = useState(
+    () => localStorage.getItem("davint_home_info") !== "closed"
+  );
   const [seedLoading, setSeedLoading] = useState(false);
   const [seedResult, setSeedResult] = useState<string | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
@@ -386,15 +389,109 @@ export function HomePage() {
 
       {/* Main */}
       <main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <img src="/davint.png" alt="DaVint Lab" className="h-36 w-auto invert" />
+        </div>
+
         {/* Welcome */}
-        <div className="mb-9">
+        <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-800 tracking-tight mb-1">
             Olá, {user?.name ?? user?.username}
           </h1>
-          <p className="text-sm text-gray-500">
-            Selecione uma etapa do pipeline de análise para começar.
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-gray-500">
+              {showInfo
+                ? "Consulte o guia abaixo para entender o fluxo da plataforma e escolha por onde começar."
+                : "Escolha uma etapa do pipeline ou uma ferramenta para começar."}
+            </p>
+            {!showInfo && (
+              <button
+                className="flex-shrink-0 w-5 h-5 rounded-full bg-davint-400/10 text-davint-400 text-xs font-bold inline-flex items-center justify-center hover:bg-davint-400/20 transition-colors"
+                onClick={() => {
+                  setShowInfo(true);
+                  localStorage.removeItem("davint_home_info");
+                }}
+                title="Mostrar guia da plataforma"
+              >
+                ?
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Info card */}
+        {showInfo && (
+          <div className="bg-davint-50 rounded-xl border border-davint-400/20 p-5 mb-8 relative">
+            <button
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 transition-colors"
+              onClick={() => {
+                setShowInfo(false);
+                localStorage.setItem("davint_home_info", "closed");
+              }}
+              aria-label="Fechar"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+                className="w-4 h-4"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <h2 className="text-sm font-bold text-gray-800 mb-3">
+              Plataforma de Detecção de Bots no YouTube
+            </h2>
+            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+              Sistema para coleta, limpeza, anotação e revisão de comentários do YouTube, voltado à
+              pesquisa científica em detecção de bots.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div>
+                <h3 className="font-semibold text-davint-400 mb-1.5">Pipeline de Análise</h3>
+                <ol className="text-gray-500 space-y-0.5 list-decimal list-inside">
+                  <li>Coletar comentários via YouTube API</li>
+                  <li>Filtrar usuários suspeitos por critérios</li>
+                  <li>Anotar cada comentário como bot ou humano</li>
+                  <li>Revisar e resolver divergências entre anotadores</li>
+                </ol>
+              </div>
+              <div>
+                <h3 className="font-semibold text-davint-400 mb-1.5">Ferramentas</h3>
+                <ul className="text-gray-500 space-y-0.5">
+                  <li>
+                    <span className="font-medium text-gray-600">Catálogo de Dados</span> — gerencie
+                    coletas, datasets e anotações
+                  </li>
+                  <li>
+                    <span className="font-medium text-gray-600">Dashboard</span> — métricas e
+                    gráficos interativos da pesquisa
+                  </li>
+                </ul>
+              </div>
+              {isAdmin && (
+                <div>
+                  <h3 className="font-semibold text-davint-400 mb-1.5">Administração</h3>
+                  <ul className="text-gray-500 space-y-0.5">
+                    <li>
+                      <span className="font-medium text-gray-600">Gerenciar Usuários</span> — criar
+                      e desativar contas de pesquisadores
+                    </li>
+                    <li>
+                      <span className="font-medium text-gray-600">Dados de teste</span> — popular
+                      banco com dados mockados
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Pipeline de análise — 4 etapas em linha */}
         <section className="mb-8">
