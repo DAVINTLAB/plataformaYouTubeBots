@@ -113,6 +113,25 @@ function IconChartBar() {
   );
 }
 
+function IconDatabase() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className="w-6 h-6"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75"
+      />
+    </svg>
+  );
+}
+
 function IconUsers() {
   return (
     <svg
@@ -173,8 +192,20 @@ const PIPELINE_STAGES: StageCard[] = [
     available: true,
     icon: <IconCheckCircle />,
   },
+];
+
+const TOOLS_CARDS: StageCard[] = [
   {
-    step: 5,
+    step: 0,
+    title: "Catálogo de Dados",
+    description: "Visualize e gerencie todas as coletas, datasets e anotações da plataforma.",
+    route: "/data",
+    adminOnly: false,
+    available: false,
+    icon: <IconDatabase />,
+  },
+  {
+    step: 0,
     title: "Dashboard",
     description:
       "Visualize métricas globais e individuais sobre as anotações com gráficos interativos.",
@@ -201,16 +232,25 @@ interface CardProps {
   stage: StageCard;
   restricted?: boolean;
   badge?: number;
+  sectionLabel?: string;
   onClick: () => void;
 }
 
-function Card({ stage, restricted = false, badge, onClick }: CardProps) {
+function Card({
+  stage,
+  restricted = false,
+  badge,
+  sectionLabel,
+  compact = false,
+  onClick,
+}: CardProps & { compact?: boolean }) {
   const clickable = stage.available && !restricted;
   return (
     <div
       onClick={clickable ? onClick : undefined}
       className={[
-        "bg-white rounded-xl border p-6 flex flex-col gap-4 transition-all duration-150 w-full",
+        "bg-white rounded-xl border flex flex-col transition-all duration-150 w-full",
+        compact ? "p-4 gap-2.5" : "p-5 gap-3",
         clickable
           ? "border-gray-200 cursor-pointer hover:border-davint-400 hover:shadow-md"
           : "border-gray-200 opacity-60 cursor-default",
@@ -219,7 +259,8 @@ function Card({ stage, restricted = false, badge, onClick }: CardProps) {
       <div className="flex items-start justify-between">
         <span
           className={[
-            "inline-flex p-2 rounded-lg",
+            "inline-flex rounded-lg",
+            compact ? "p-1.5" : "p-2",
             clickable ? "bg-davint-400/10 text-davint-400" : "bg-gray-100 text-gray-400",
           ].join(" ")}
         >
@@ -227,7 +268,7 @@ function Card({ stage, restricted = false, badge, onClick }: CardProps) {
         </span>
         <span
           className={[
-            "text-[11px] font-semibold px-2.5 py-0.5 rounded-full",
+            "text-[10px] font-semibold px-2 py-0.5 rounded-full",
             restricted
               ? "bg-orange-50 text-orange-600"
               : stage.available
@@ -240,10 +281,14 @@ function Card({ stage, restricted = false, badge, onClick }: CardProps) {
       </div>
 
       <div className="flex-1">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
-          {stage.step > 0 ? `Etapa ${stage.step}` : "Administração"}
-        </p>
-        <h3 className="text-[15px] font-bold text-gray-800 mb-1.5">
+        {sectionLabel && (
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">
+            {sectionLabel}
+          </p>
+        )}
+        <h3
+          className={`font-bold text-gray-800 ${compact ? "text-[13px] mb-1" : "text-[14px] mb-1"}`}
+        >
           {stage.title}
           {badge !== undefined && badge > 0 && (
             <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-bold rounded-full bg-yellow-100 text-yellow-700">
@@ -251,11 +296,13 @@ function Card({ stage, restricted = false, badge, onClick }: CardProps) {
             </span>
           )}
         </h3>
-        <p className="text-sm text-gray-500 leading-relaxed">{stage.description}</p>
+        <p className={`text-gray-500 leading-snug ${compact ? "text-xs" : "text-[13px]"}`}>
+          {stage.description}
+        </p>
       </div>
 
       {clickable && (
-        <div className="flex items-center gap-1 text-sm font-semibold text-davint-400 mt-auto">
+        <div className="flex items-center gap-1 text-xs font-semibold text-davint-400 mt-auto">
           Acessar
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -263,7 +310,7 @@ function Card({ stage, restricted = false, badge, onClick }: CardProps) {
             viewBox="0 0 24 24"
             strokeWidth={2}
             stroke="currentColor"
-            className="w-4 h-4"
+            className="w-3.5 h-3.5"
           >
             <path
               strokeLinecap="round"
@@ -333,8 +380,6 @@ export function HomePage() {
     }
   };
 
-  const pipelineStages = PIPELINE_STAGES;
-
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <PageHeader onChangePassword={() => setShowChangePassword(true)} />
@@ -351,42 +396,61 @@ export function HomePage() {
           </p>
         </div>
 
-        {/* Pipeline */}
-        <section className="mb-10">
-          <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-4">
+        {/* Pipeline de análise — 4 etapas em linha */}
+        <section className="mb-8">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-3">
             Pipeline de análise
           </h2>
-          <div className="flex flex-wrap justify-center gap-4">
-            {pipelineStages.map((stage) => (
-              <div
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {PIPELINE_STAGES.map((stage) => (
+              <Card
                 key={stage.route}
-                className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.7rem)] flex"
-              >
-                <Card
-                  stage={stage}
-                  restricted={stage.adminOnly && !isAdmin}
-                  badge={stage.route === "/review" && isAdmin ? pendingConflicts : undefined}
-                  onClick={() => navigate(stage.route)}
-                />
-              </div>
+                stage={stage}
+                sectionLabel={`Etapa ${stage.step}`}
+                restricted={stage.adminOnly && !isAdmin}
+                badge={stage.route === "/review" && isAdmin ? pendingConflicts : undefined}
+                onClick={() => navigate(stage.route)}
+              />
             ))}
           </div>
         </section>
 
-        {/* Admin */}
+        {/* Ferramentas + Administração — linha compacta */}
+        <section className="mb-8">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-3">
+            Ferramentas
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {TOOLS_CARDS.map((stage) => (
+              <Card key={stage.route} stage={stage} compact onClick={() => navigate(stage.route)} />
+            ))}
+          </div>
+        </section>
+
+        {/* Administração — admin only */}
         {isAdmin && (
-          <section>
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-4">
+          <section className="mb-8">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-3">
               Administração
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {ADMIN_CARDS.map((stage) => (
-                <Card key={stage.route} stage={stage} onClick={() => navigate(stage.route)} />
+                <Card
+                  key={stage.route}
+                  stage={stage}
+                  compact
+                  sectionLabel="Administração"
+                  onClick={() => navigate(stage.route)}
+                />
               ))}
             </div>
+          </section>
+        )}
 
-            {/* Seed */}
-            <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+        {/* Seed — admin only */}
+        {isAdmin && (
+          <section>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
               <h3 className="text-sm font-semibold text-gray-700 mb-1">Dados de teste</h3>
               <p className="text-xs text-gray-500 mb-3">
                 Popula o banco com uma coleta mockada (30 usuários, 18 bots) e um dataset pronto
