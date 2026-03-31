@@ -201,7 +201,7 @@ const TOOLS_CARDS: StageCard[] = [
     description: "Visualize e gerencie todas as coletas, datasets e anotações da plataforma.",
     route: "/data",
     adminOnly: false,
-    available: false,
+    available: true,
     icon: <IconDatabase />,
   },
   {

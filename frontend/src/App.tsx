@@ -7,6 +7,7 @@ import { CleanPage } from "./pages/Clean/CleanPage";
 import { CollectPage } from "./pages/Collect/CollectPage";
 import { HomePage } from "./pages/Home/HomePage";
 import { ReviewPage } from "./pages/Review/ReviewPage";
+import { DataPage } from "./pages/Data/DataPage";
 import { UsersPage } from "./pages/Users/UsersPage";
 
 export function App() {
@@ -26,6 +27,7 @@ export function App() {
             <Route path="/collect" element={<CollectPage />} />
             <Route path="/clean" element={<CleanPage />} />
             <Route path="/annotate" element={<AnnotatePage />} />
+            <Route path="/data" element={<DataPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
