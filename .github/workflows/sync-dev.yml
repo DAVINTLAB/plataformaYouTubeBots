@@ -1,0 +1,39 @@
+name: Sync dev with main
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+jobs:
+  sync:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Create sync PR (main → dev)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Verificar se já existe PR aberto de main → dev
+          EXISTING=$(gh pr list --base dev --head main --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING já existe (main → dev). Nada a fazer."
+            exit 0
+          fi
+
+          # Verificar se há diferença entre main e dev
+          DIFF=$(git log origin/dev..origin/main --oneline | head -1)
+          if [ -z "$DIFF" ]; then
+            echo "dev já está sincronizada com main. Nada a fazer."
+            exit 0
+          fi
+
+          gh pr create \
+            --base dev \
+            --head main \
+            --title "chore: sincronizar dev com main" \
+            --body "Sincronização automática após merge em main. Apenas merge commits — sem mudanças de código."
