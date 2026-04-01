@@ -1,10 +1,13 @@
 import os
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from core.rate_limit import limiter
 from database import get_db
 from routers import annotate, auth, clean, collect, data, review, seed, users
 
@@ -16,6 +19,18 @@ CORS_ORIGINS = [
 ]
 
 app = FastAPI(title="Plataforma YouTube Bots API", version="0.1.0")
+
+# Rate limiting (slowapi)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Muitas tentativas. Tente novamente em alguns minutos."},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,

@@ -55,9 +55,9 @@ def test_protected_route_without_token_returns_401(client):
 
 def test_expired_token_returns_401(client, mocker):
     """Stub: jwt.decode levanta ExpiredSignatureError."""
-    from jose.exceptions import ExpiredSignatureError
+    import jwt as pyjwt
 
-    mocker.patch("services.auth.jwt.decode", side_effect=ExpiredSignatureError)
+    mocker.patch("services.auth.jwt.decode", side_effect=pyjwt.ExpiredSignatureError)
 
     response = client.get("/users/", headers={"Authorization": "Bearer expired_token"})
     assert response.status_code == 401
