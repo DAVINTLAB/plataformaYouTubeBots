@@ -1,10 +1,9 @@
 import os
 from datetime import UTC, datetime, timedelta
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from jose.exceptions import ExpiredSignatureError
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
@@ -51,7 +50,7 @@ def verify_refresh_token(token: str) -> dict | None:
         if payload.get("type") != "refresh":
             return None
         return payload
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 
@@ -80,13 +79,13 @@ def get_current_user(
         username: str | None = payload.get("sub")
         if username is None:
             raise credentials_exception
-    except ExpiredSignatureError:
+    except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expirado.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
-    except JWTError as err:
+    except jwt.PyJWTError as err:
         raise credentials_exception from err
 
     user = (
