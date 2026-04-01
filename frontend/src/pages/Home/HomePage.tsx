@@ -211,7 +211,7 @@ const TOOLS_CARDS: StageCard[] = [
       "Visualize métricas globais e individuais sobre as anotações com gráficos interativos.",
     route: "/dashboard",
     adminOnly: false,
-    available: false,
+    available: true,
     icon: <IconChartBar />,
   },
 ];

@@ -1,37 +1,12 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { ProtectedRoute } from "./components/ProtectedRoute";
+import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
-import { LoginPage } from "./pages/Auth/LoginPage";
-import { AnnotatePage } from "./pages/Annotate/AnnotatePage";
-import { CleanPage } from "./pages/Clean/CleanPage";
-import { CollectPage } from "./pages/Collect/CollectPage";
-import { HomePage } from "./pages/Home/HomePage";
-import { ReviewPage } from "./pages/Review/ReviewPage";
-import { DataPage } from "./pages/Data/DataPage";
-import { UsersPage } from "./pages/Users/UsersPage";
+import { AppRoutes } from "./routes/AppRoutes";
 
 export function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-
-          <Route element={<ProtectedRoute requireAdmin />}>
-            <Route path="/users" element={<UsersPage />} />
-            <Route path="/review" element={<ReviewPage />} />
-          </Route>
-
-          <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/collect" element={<CollectPage />} />
-            <Route path="/clean" element={<CleanPage />} />
-            <Route path="/annotate" element={<AnnotatePage />} />
-            <Route path="/data" element={<DataPage />} />
-          </Route>
-
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <AppRoutes />
       </BrowserRouter>
     </AuthProvider>
   );
