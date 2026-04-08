@@ -424,3 +424,59 @@ class TestAnnotations:
         assert progress["annotated"] == 0
         assert progress["bots_comments"] == 0
         assert progress["annotators_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Cobertura adicional — edge cases do servico data
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryPgSizeFail:
+    def test_pg_total_relation_size_exception(self, client, db, auth_as_user, mocker):
+        """pg_total_relation_size falha: estimated_size_mb = 0."""
+        original_execute = db.execute
+
+        def patched_execute(stmt, *args, **kwargs):
+            stmt_str = str(stmt)
+            if "pg_total_relation_size" in stmt_str:
+                raise Exception("permission denied")
+            return original_execute(stmt, *args, **kwargs)
+
+        mocker.patch.object(db, "execute", side_effect=patched_execute)
+
+        resp = client.get("/data/summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["estimated_size_mb"] == 0.0
+
+
+class TestEmptyColAuthorsSkip:
+    def test_dataset_entry_with_no_comments(self, client, db, auth_as_user):
+        """Entry aponta para autor sem comentarios: col_authors vazio."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_no_auth")
+        ds = Dataset(
+            name=f"no_auth_{uuid.uuid4().hex[:6]}",
+            collection_id=col.id,
+            criteria_applied=["percentil"],
+            thresholds={},
+            total_users_original=1,
+            total_users_selected=1,
+            created_by=auth_as_user.id,
+        )
+        db.add(ds)
+        db.flush()
+        entry = DatasetEntry(
+            dataset_id=ds.id,
+            author_channel_id="ghost_author",
+            author_display_name="Ghost",
+            comment_count=0,
+            matched_criteria=["percentil"],
+        )
+        db.add(entry)
+        db.commit()
+
+        resp = client.get("/data/annotations")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["total"] == 0

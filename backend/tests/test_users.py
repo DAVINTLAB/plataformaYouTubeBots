@@ -250,3 +250,16 @@ def test_reset_nonexistent_user_returns_404(client, fake_admin):
         json={"new_password": "qualquer99"},
     )
     assert response.status_code == 404
+
+
+def test_reactivate_nonexistent_user_returns_404(
+    client,
+    fake_admin,
+):
+    """Reativar usuario inexistente retorna 404."""
+    app.dependency_overrides[get_current_user] = lambda: fake_admin
+
+    response = client.post(
+        f"/users/{uuid.uuid4()}/reactivate",
+    )
+    assert response.status_code == 404

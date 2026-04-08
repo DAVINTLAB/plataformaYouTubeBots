@@ -537,3 +537,506 @@ class TestReviewImport:
             },
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Testes adicionais — cobertura 100%
+# ---------------------------------------------------------------------------
+
+
+class TestListConflictsVideoFilter:
+    def test_filtro_por_video_id(self, client, auth_as_admin, setup_conflict):
+        """Filtrar conflitos por video_id retorna resultados."""
+        resp = client.get("/review/conflicts?video_id=vid123")
+        assert resp.status_code == 200
+        assert len(resp.json()["items"]) == 1
+
+    def test_filtro_por_video_id_inexistente(
+        self, client, auth_as_admin, setup_conflict
+    ):
+        """Filtrar conflitos por video_id inexistente retorna vazio."""
+        resp = client.get("/review/conflicts?video_id=nao_existe")
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
+
+
+class TestListConflictsStatusFilter:
+    def test_filtro_por_status_resolved(
+        self, client, db, auth_as_admin, setup_conflict
+    ):
+        """Filtrar conflitos por status resolved funciona."""
+        # Resolver o conflito
+        cid = str(setup_conflict["conflict"].id)
+        client.post(
+            "/review/resolve",
+            json={
+                "conflict_id": cid,
+                "resolved_label": "bot",
+            },
+        )
+        resp = client.get("/review/conflicts?status=resolved")
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["status"] == "resolved"
+
+        # Pendentes zerados
+        resp2 = client.get("/review/conflicts?status=pending")
+        assert resp2.json()["items"] == []
+
+
+class TestConflictDetailResolved:
+    def test_resolved_conflict_mostra_resolver(
+        self, client, db, auth_as_admin, admin_user, setup_conflict
+    ):
+        """Conflito resolvido mostra nome do admin."""
+        cid = str(setup_conflict["conflict"].id)
+        # Resolver
+        client.post(
+            "/review/resolve",
+            json={
+                "conflict_id": cid,
+                "resolved_label": "bot",
+            },
+        )
+        resp = client.get(f"/review/conflicts/{cid}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resolved_by"] == "Admin Teste"
+        assert data["resolved_label"] == "bot"
+
+
+class TestListBotsEdgeCases:
+    def test_bots_com_filtro_video_id(
+        self,
+        client,
+        db,
+        auth_as_admin,
+        admin_user,
+        annotator_a,
+    ):
+        """Filtrar bots por video_id funciona."""
+        col = _make_collection(db, admin_user.id)
+        comments = _make_comments(db, col.id, "UC_bot_v", count=1)
+        _make_dataset(db, col.id, admin_user.id, ["UC_bot_v"])
+        db.add(
+            Annotation(
+                comment_id=comments[0].id,
+                annotator_id=annotator_a.id,
+                label="bot",
+                justificativa="Spam",
+            )
+        )
+        db.commit()
+
+        resp = client.get("/review/bots?video_id=vid123")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] >= 1
+
+    def test_bots_sem_resultados_empty_page(self, client, auth_as_admin):
+        """Sem bots, retorna pagina vazia."""
+        resp = client.get("/review/bots")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+
+    def test_bots_com_dataset_id_inexistente(self, client, auth_as_admin):
+        """Filtrar bots por dataset_id inexistente retorna vazio."""
+        resp = client.get(f"/review/bots?dataset_id={uuid.uuid4()}")
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
+
+
+class TestExportReviewEdgeCases:
+    def test_export_json_dataset_inexistente(self, client, auth_as_admin):
+        """Export com dataset_id inexistente retorna 404."""
+        resp = client.get(f"/review/export?dataset_id={uuid.uuid4()}" "&format=json")
+        assert resp.status_code == 404
+
+    def test_export_csv_dataset_inexistente(self, client, auth_as_admin):
+        """Export CSV com dataset_id inexistente retorna 404."""
+        resp = client.get(f"/review/export?dataset_id={uuid.uuid4()}" "&format=csv")
+        assert resp.status_code == 404
+
+    def test_export_json_consenso_label(
+        self,
+        client,
+        db,
+        auth_as_admin,
+        admin_user,
+        annotator_a,
+        annotator_b,
+    ):
+        """Export com anotacoes sem conflito usa label consenso."""
+        col = _make_collection(db, admin_user.id)
+        comments = _make_comments(db, col.id, "UC_cons", count=1)
+        ds = _make_dataset(db, col.id, admin_user.id, ["UC_cons"])
+        # Ambos anotam como bot (consenso)
+        db.add(
+            Annotation(
+                comment_id=comments[0].id,
+                annotator_id=annotator_a.id,
+                label="bot",
+                justificativa="Spam",
+            )
+        )
+        db.add(
+            Annotation(
+                comment_id=comments[0].id,
+                annotator_id=annotator_b.id,
+                label="bot",
+                justificativa="Repetitivo",
+            )
+        )
+        db.commit()
+
+        resp = client.get(f"/review/export?dataset_id={ds.id}" "&format=json")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["comments"]) == 1
+        assert data["comments"][0]["final_label"] == "bot"
+        assert data["comments"][0]["resolution"] is None
+
+
+class TestResolveCommentsEdgeCases:
+    def test_missing_comment_skip(
+        self, client, db, auth_as_admin, admin_user, setup_conflict
+    ):
+        """Import com comment_db_id inexistente pula e reporta."""
+        resp = client.post(
+            "/review/import",
+            json={
+                "dataset_name": "test",
+                "video_id": "vid123",
+                "comments": [
+                    {
+                        "comment_db_id": str(uuid.uuid4()),
+                        "author_channel_id": "UC_x",
+                        "author_display_name": "X",
+                        "text_original": "t",
+                        "final_label": "bot",
+                        "resolution": {
+                            "resolved_label": "bot",
+                        },
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["skipped"] == 1
+        assert len(data["errors"]) == 1
+
+    def test_no_resolution_field_skip(self, client, db, auth_as_admin, setup_conflict):
+        """Import sem campo resolution pula o comentario."""
+        comment = setup_conflict["comments"][0]
+        resp = client.post(
+            "/review/import",
+            json={
+                "dataset_name": "test",
+                "video_id": "vid123",
+                "comments": [
+                    {
+                        "comment_db_id": str(comment.id),
+                        "author_channel_id": "UC_suspect1",
+                        "author_display_name": "X",
+                        "text_original": "t",
+                        "final_label": "bot",
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["skipped"] == 1
+
+    def test_no_conflict_for_comment_skip(self, client, db, auth_as_admin, admin_user):
+        """Import com comentario sem conflito registrado pula."""
+        col = _make_collection(db, admin_user.id)
+        comments = _make_comments(db, col.id, "UC_noconflict", count=1)
+        db.commit()
+
+        resp = client.post(
+            "/review/import",
+            json={
+                "dataset_name": "test",
+                "video_id": "vid123",
+                "comments": [
+                    {
+                        "comment_db_id": str(comments[0].id),
+                        "author_channel_id": "UC_noconflict",
+                        "author_display_name": "X",
+                        "text_original": "t",
+                        "final_label": "bot",
+                        "resolution": {
+                            "resolved_label": "bot",
+                        },
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["skipped"] == 1
+        assert any("conflito" in e.lower() for e in data["errors"])
+
+    def test_already_resolved_conflict_skip(
+        self, client, db, auth_as_admin, setup_conflict
+    ):
+        """Import com conflito ja resolvido pula."""
+        comment = setup_conflict["comments"][0]
+        cid = str(setup_conflict["conflict"].id)
+
+        # Resolver primeiro
+        client.post(
+            "/review/resolve",
+            json={
+                "conflict_id": cid,
+                "resolved_label": "bot",
+            },
+        )
+
+        # Tentar importar novamente
+        resp = client.post(
+            "/review/import",
+            json={
+                "dataset_name": "test",
+                "video_id": "vid123",
+                "comments": [
+                    {
+                        "comment_db_id": str(comment.id),
+                        "author_channel_id": "UC_suspect1",
+                        "author_display_name": "X",
+                        "text_original": "t",
+                        "final_label": "humano",
+                        "resolution": {
+                            "resolved_label": "humano",
+                        },
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["skipped"] == 1
+
+    def test_invalid_label_skip(self, client, db, auth_as_admin, setup_conflict):
+        """Import com label invalido pula e reporta."""
+        comment = setup_conflict["comments"][0]
+        resp = client.post(
+            "/review/import",
+            json={
+                "dataset_name": "test",
+                "video_id": "vid123",
+                "comments": [
+                    {
+                        "comment_db_id": str(comment.id),
+                        "author_channel_id": "UC_suspect1",
+                        "author_display_name": "X",
+                        "text_original": "t",
+                        "final_label": "bot",
+                        "resolution": {
+                            "resolved_label": "incerto",
+                        },
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["skipped"] == 1
+        assert any("inválido" in e or "invalido" in e.lower() for e in data["errors"])
+
+
+class TestImportReviewChunk:
+    def test_import_chunk_resolve_conflitos(
+        self, client, db, auth_as_admin, setup_conflict
+    ):
+        """Import-chunk resolve conflitos em batch."""
+        comment = setup_conflict["comments"][0]
+        resp = client.post(
+            "/review/import-chunk",
+            json={
+                "comments": [
+                    {
+                        "comment_db_id": str(comment.id),
+                        "author_channel_id": "UC_suspect1",
+                        "author_display_name": "X",
+                        "text_original": "t",
+                        "final_label": "bot",
+                        "resolution": {
+                            "resolved_label": "bot",
+                        },
+                    },
+                ],
+                "done": True,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_imported"] == 1
+        assert data["chunk_received"] == 1
+        assert data["done"] is True
+
+
+# -------------------------------------------------------------------
+# Cobertura adicional — service functions diretas
+# -------------------------------------------------------------------
+
+
+class TestExportReviewJsonInvalidDataset:
+    def test_export_json_missing_dataset_yields_error(self, db):
+        """export_review_json com dataset_id inexistente gera JSON de erro."""
+        from services.review import export_review_json
+
+        gen = export_review_json(db, uuid.uuid4())
+        output = "".join(gen)
+        assert "error" in output
+        assert "não encontrado" in output.lower()
+
+
+class TestExportReviewCsvInvalidDataset:
+    def test_export_csv_missing_dataset_yields_error(self, db):
+        """export_review_csv com dataset_id inexistente gera CSV de erro."""
+        from services.review import export_review_csv
+
+        gen = export_review_csv(db, uuid.uuid4())
+        output = "".join(gen)
+        assert "error" in output
+
+
+class TestExportReviewJsonConsensusLabel:
+    def test_single_label_consensus_in_json_export(self, db, admin_user, annotator_a):
+        """Export JSON com 1 anotacao usa label como consenso."""
+        from services.review import export_review_json
+
+        col = _make_collection(db, admin_user.id)
+        comments = _make_comments(db, col.id, "UC_cons_j", 1)
+        ds = _make_dataset(db, col.id, admin_user.id, ["UC_cons_j"])
+        # Apenas 1 anotacao — sem conflito
+        ann = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=annotator_a.id,
+            label="humano",
+        )
+        db.add(ann)
+        db.commit()
+
+        import json
+
+        gen = export_review_json(db, ds.id)
+        output = "".join(gen)
+        data = json.loads(output)
+        assert len(data["comments"]) == 1
+        assert data["comments"][0]["final_label"] == "humano"
+
+    def test_pending_label_when_divergent_no_resolution(
+        self, db, admin_user, annotator_a, annotator_b
+    ):
+        """Export JSON com anotacoes divergentes sem resolucao
+        resulta em final_label=pending."""
+        from services.review import export_review_json
+
+        col = _make_collection(db, admin_user.id, video_id="vid_pend")
+        comments = _make_comments(db, col.id, "UC_pend", 1)
+        ds = _make_dataset(db, col.id, admin_user.id, ["UC_pend"])
+
+        ann_a = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=annotator_a.id,
+            label="bot",
+            justificativa="spam",
+        )
+        ann_b = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=annotator_b.id,
+            label="humano",
+        )
+        db.add_all([ann_a, ann_b])
+        db.commit()
+
+        import json
+
+        gen = export_review_json(db, ds.id)
+        output = "".join(gen)
+        data = json.loads(output)
+        assert len(data["comments"]) == 1
+        assert data["comments"][0]["final_label"] == "pending"
+
+
+class TestExportReviewCsvConsensusLabel:
+    def test_pending_label_in_csv_export(
+        self, db, admin_user, annotator_a, annotator_b
+    ):
+        """Export CSV com labels divergentes sem resolucao
+        resulta em final_label=pending."""
+        from services.review import export_review_csv
+
+        col = _make_collection(db, admin_user.id, video_id="vid_csv_p")
+        comments = _make_comments(db, col.id, "UC_csv_p", 1)
+        ds = _make_dataset(db, col.id, admin_user.id, ["UC_csv_p"])
+
+        ann_a = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=annotator_a.id,
+            label="bot",
+            justificativa="spam",
+        )
+        ann_b = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=annotator_b.id,
+            label="humano",
+        )
+        db.add_all([ann_a, ann_b])
+        db.commit()
+
+        gen = export_review_csv(db, ds.id)
+        output = "".join(gen)
+        assert "pending" in output
+
+    def test_single_label_consensus_in_csv_export(self, db, admin_user, annotator_a):
+        """Export CSV com 1 anotacao usa label como consenso."""
+        from services.review import export_review_csv
+
+        col = _make_collection(db, admin_user.id, video_id="vid_csv_c")
+        comments = _make_comments(db, col.id, "UC_csv_c", 1)
+        ds = _make_dataset(db, col.id, admin_user.id, ["UC_csv_c"])
+
+        ann = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=annotator_a.id,
+            label="bot",
+            justificativa="spam",
+        )
+        db.add(ann)
+        db.commit()
+
+        gen = export_review_csv(db, ds.id)
+        output = "".join(gen)
+        assert "bot" in output
+
+
+class TestFindDatasetForComment:
+    def test_no_entry_returns_none(self, db, admin_user):
+        """Comentario sem entry de dataset retorna None."""
+        from services.review import _find_dataset_for_comment
+
+        col = _make_collection(db, admin_user.id, video_id="vid_find")
+        comments = _make_comments(db, col.id, "UC_find", 1)
+        db.commit()
+
+        result = _find_dataset_for_comment(db, comments[0])
+        assert result is None
+
+    def test_with_entry_returns_dataset(self, db, admin_user):
+        """Comentario com entry retorna dataset correto."""
+        from services.review import _find_dataset_for_comment
+
+        col = _make_collection(db, admin_user.id, video_id="vid_find2")
+        comments = _make_comments(db, col.id, "UC_find2", 1)
+        ds = _make_dataset(db, col.id, admin_user.id, ["UC_find2"])
+        db.commit()
+
+        result = _find_dataset_for_comment(db, comments[0])
+        assert result is not None
+        assert result.id == ds.id

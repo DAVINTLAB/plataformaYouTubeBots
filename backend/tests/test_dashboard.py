@@ -604,3 +604,370 @@ class TestSeguranca:
         text = resp.text
         assert admin_user.username not in text
         assert auth_as_user.username not in text
+
+
+# ---------------------------------------------------------------------------
+# Cobertura adicional — edge cases do serviço dashboard
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyCommentSingleLabel:
+    def test_single_annotation_consensus(self, client, db, auth_as_user, admin_user):
+        """1 anotacao apenas classifica pelo label unico."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_single")
+        comments = _make_comments(db, col.id, "ch_single", count=2)
+        _make_dataset(
+            db,
+            col.id,
+            auth_as_user.id,
+            ["ch_single"],
+            name="ds_single",
+        )
+
+        # Apenas 1 anotador classifica como bot
+        _annotate(db, comments[0], auth_as_user, "bot", "unico")
+        # Apenas 1 anotador classifica como humano
+        _annotate(db, comments[1], auth_as_user, "humano")
+        db.commit()
+
+        resp = client.get("/dashboard/global")
+        assert resp.status_code == 200
+        s = resp.json()["summary"]
+        assert s["total_bots"] >= 1
+        assert s["total_humans"] >= 1
+
+
+class TestBotRateChartNonHorizontal:
+    def test_bot_rate_vertical_orientation(self, client, db, auth_as_user, admin_user):
+        """Gráfico de taxa de bots com orientacao vertical."""
+        from services.dashboard import _make_bot_rate_chart
+
+        data = [
+            {"name": "ds1", "bot_rate": 50.0},
+            {"name": "ds2", "bot_rate": 5.0},
+        ]
+        chart_json = _make_bot_rate_chart(data, orientation="v")
+        _assert_valid_plotly_json(chart_json)
+        parsed = json.loads(chart_json)
+        # Vertical bar: x should have names
+        assert "ds1" in str(parsed["data"])
+
+
+class TestGlobalDatasetNoComments:
+    def test_dataset_with_no_comments_skipped(self, client, db, auth_as_user):
+        """Dataset sem entries e sem comentários nao quebra."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_empty_ds")
+        # Dataset sem entries
+        ds = Dataset(
+            name="empty_ds",
+            collection_id=col.id,
+            criteria_applied=["percentil"],
+            thresholds={},
+            total_users_original=0,
+            total_users_selected=0,
+            created_by=auth_as_user.id,
+        )
+        db.add(ds)
+        db.commit()
+
+        resp = client.get("/dashboard/user")
+        assert resp.status_code == 200
+        # O dataset vazio deve ser ignorado (0 comments)
+        data = resp.json()
+        assert data["summary"]["total_datasets_assigned"] == 0
+
+
+class TestBotCommentsFilters:
+    def test_filter_by_dataset_id(self, client, db, auth_as_user, admin_user):
+        """Filtro por dataset_id retorna apenas bots daquele ds."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_filt_ds")
+        comments_a = _make_comments(db, col.id, "ch_fa", count=2)
+        comments_b = _make_comments(db, col.id, "ch_fb", count=2)
+        ds_a = _make_dataset(
+            db,
+            col.id,
+            auth_as_user.id,
+            ["ch_fa"],
+            name="ds_filt_a",
+        )
+        _make_dataset(
+            db,
+            col.id,
+            auth_as_user.id,
+            ["ch_fb"],
+            name="ds_filt_b",
+        )
+
+        _annotate(db, comments_a[0], auth_as_user, "bot", "spam")
+        _annotate(db, comments_b[0], auth_as_user, "bot", "spam")
+        db.commit()
+
+        resp = client.get(f"/dashboard/bots?dataset_id={ds_a.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        for item in data["items"]:
+            assert item["dataset_name"] == "ds_filt_a"
+
+    def test_filter_by_video_id(self, client, db, auth_as_user):
+        """Filtro por video_id retorna bots daquele video."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_filt_vid")
+        comments = _make_comments(db, col.id, "ch_fv", count=2)
+        _make_dataset(
+            db,
+            col.id,
+            auth_as_user.id,
+            ["ch_fv"],
+            name="ds_fv",
+        )
+        _annotate(db, comments[0], auth_as_user, "bot", "teste")
+        db.commit()
+
+        resp = client.get("/dashboard/bots?video_id=vid_filt_vid")
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1
+
+    def test_filter_by_author(self, client, db, auth_as_user):
+        """Filtro por author busca por display name."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_filt_auth")
+        comments = _make_comments(db, col.id, "ch_auth_filt", count=2)
+        _make_dataset(
+            db,
+            col.id,
+            auth_as_user.id,
+            ["ch_auth_filt"],
+            name="ds_auth_filt",
+        )
+        _annotate(db, comments[0], auth_as_user, "bot", "teste")
+        db.commit()
+
+        resp = client.get("/dashboard/bots?author=ch_auth_filt")
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1
+
+    def test_filter_by_criteria(self, client, db, auth_as_user):
+        """Filtro por criteria retorna bots de datasets com aquele criterio."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_filt_crit")
+        comments = _make_comments(db, col.id, "ch_crit", count=2)
+        _make_dataset(
+            db,
+            col.id,
+            auth_as_user.id,
+            ["ch_crit"],
+            criteria=["intervalo"],
+            name="ds_crit",
+        )
+        _annotate(db, comments[0], auth_as_user, "bot", "teste")
+        db.commit()
+
+        resp = client.get("/dashboard/bots?criteria=intervalo")
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1
+
+
+class TestHighlightsTextTruncation:
+    def test_long_text_truncated_in_highlights(self, client, db, auth_as_user):
+        """Comentarios com >60 chars sao truncados nos highlights."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_trunc")
+        long_text = "A" * 80
+        c = Comment(
+            collection_id=col.id,
+            comment_id="trunc_c1",
+            author_channel_id="ch_trunc",
+            author_display_name="Truncador",
+            text_original=long_text,
+            like_count=100,
+            reply_count=50,
+            published_at=datetime(2024, 6, 1),
+            updated_at=datetime(2024, 6, 1),
+        )
+        db.add(c)
+        db.commit()
+
+        resp = client.get("/dashboard/video?video_id=vid_trunc")
+        assert resp.status_code == 200
+        highlights = resp.json()["highlights"]
+
+        # Find highlights with truncated text
+        truncated = [h for h in highlights if h.get("detail", "").endswith("...")]
+        assert len(truncated) >= 1
+        for h in truncated:
+            # detail should be 63 chars (60 + "...")
+            assert len(h["detail"]) <= 63
+
+
+class TestOldestAccountPreEpochFilter:
+    def test_pre_1970_date_filtered_from_oldest(self, client, db, auth_as_user):
+        """Conta com data pre-1970 (epoch) nao aparece como mais antiga."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_epoch")
+        # Canal com data epoch (1970-01-01) — deve ser filtrado
+        c_epoch = Comment(
+            collection_id=col.id,
+            comment_id="epoch_c1",
+            author_channel_id="ch_epoch",
+            author_display_name="Epoch Bot",
+            text_original="Bot com data epoch",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 6, 1),
+            updated_at=datetime(2024, 6, 1),
+            author_channel_published_at=datetime(1970, 1, 1),
+        )
+        # Canal com data valida
+        c_valid = Comment(
+            collection_id=col.id,
+            comment_id="valid_c1",
+            author_channel_id="ch_valid",
+            author_display_name="Valid Human",
+            text_original="Humano com data valida",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 6, 1),
+            updated_at=datetime(2024, 6, 1),
+            author_channel_published_at=datetime(2015, 3, 15),
+        )
+        db.add_all([c_epoch, c_valid])
+        db.commit()
+
+        resp = client.get("/dashboard/video?video_id=vid_epoch")
+        assert resp.status_code == 200
+        highlights = resp.json()["highlights"]
+
+        oldest_items = [h for h in highlights if h["label"] == "Conta mais antiga"]
+        # Should show Valid Human, not Epoch Bot
+        if oldest_items:
+            assert oldest_items[0]["value"] == "Valid Human"
+            assert "1970" not in oldest_items[0]["detail"]
+
+
+class TestEmptyAuthorSetSkip:
+    def test_dataset_with_entries_but_no_matching_comments(
+        self, client, db, auth_as_user
+    ):
+        """Dataset com entry apontando para autor sem comentarios."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_no_match")
+        # Dataset entry aponta para autor que nao tem
+        # comentarios nesta coleta
+        ds = Dataset(
+            name="ds_no_match",
+            collection_id=col.id,
+            criteria_applied=["percentil"],
+            thresholds={},
+            total_users_original=1,
+            total_users_selected=1,
+            created_by=auth_as_user.id,
+        )
+        db.add(ds)
+        db.flush()
+        entry = DatasetEntry(
+            dataset_id=ds.id,
+            author_channel_id="ch_ghost",
+            author_display_name="Ghost",
+            comment_count=0,
+            matched_criteria=["percentil"],
+        )
+        db.add(entry)
+        db.commit()
+
+        resp = client.get("/dashboard/global")
+        assert resp.status_code == 200
+        s = resp.json()["summary"]
+        assert s["total_comments_in_datasets"] == 0
+
+
+class TestBotRateByCriteriaEmptyCids:
+    def test_dataset_with_ghost_entries_skipped_in_bot_rate(
+        self, client, db, auth_as_user
+    ):
+        """Dataset com entries sem comentarios reais e ignorado."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_ghost_br")
+        ds = Dataset(
+            name="ds_ghost_br",
+            collection_id=col.id,
+            criteria_applied=["percentil"],
+            thresholds={},
+            total_users_original=1,
+            total_users_selected=1,
+            created_by=auth_as_user.id,
+        )
+        db.add(ds)
+        db.flush()
+        entry = DatasetEntry(
+            dataset_id=ds.id,
+            author_channel_id="ch_ghost_br",
+            author_display_name="Ghost",
+            comment_count=0,
+            matched_criteria=["percentil"],
+        )
+        db.add(entry)
+        db.commit()
+
+        resp = client.get("/dashboard/video?video_id=vid_ghost_br")
+        assert resp.status_code == 200
+        _assert_valid_plotly_json(resp.json()["bot_rate_by_criteria_chart"])
+
+
+class TestClassifyCommentMultiLabelNoConflict:
+    def test_divergent_labels_without_conflict_returns_none(
+        self, client, db, auth_as_user, admin_user
+    ):
+        """Anotacoes divergentes sem AnnotationConflict: classificacao None."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_noconf")
+        comments = _make_comments(db, col.id, "ch_noconf", count=1)
+        _make_dataset(
+            db,
+            col.id,
+            auth_as_user.id,
+            ["ch_noconf"],
+            name="ds_noconf",
+        )
+
+        # Inserir anotacoes divergentes SEM conflito
+        ann_a = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=auth_as_user.id,
+            label="bot",
+            justificativa="suspeito",
+        )
+        ann_b = Annotation(
+            comment_id=comments[0].id,
+            annotator_id=admin_user.id,
+            label="humano",
+        )
+        db.add_all([ann_a, ann_b])
+        db.commit()
+
+        resp = client.get("/dashboard/global")
+        assert resp.status_code == 200
+        # O comentario nao eh classificado (None)
+        # Total de bots e humanos nao inclui este caso
+        s = resp.json()["summary"]
+        assert s["total_bots"] == 0
+        assert s["total_humans"] == 0
+
+
+class TestOldestAccountHighlightShown:
+    def test_oldest_account_with_valid_year_shown(self, client, db, auth_as_user):
+        """Conta antiga com year > 1970 aparece nos highlights."""
+        col = _make_collection(db, auth_as_user.id, video_id="vid_old_ok")
+        c = Comment(
+            collection_id=col.id,
+            comment_id="old_ok_c1",
+            author_channel_id="ch_old_ok",
+            author_display_name="Old Account",
+            text_original="Conta de 2015",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 6, 1),
+            updated_at=datetime(2024, 6, 1),
+            author_channel_published_at=datetime(2015, 6, 15),
+        )
+        db.add(c)
+        db.commit()
+
+        resp = client.get("/dashboard/video?video_id=vid_old_ok")
+        assert resp.status_code == 200
+        highlights = resp.json()["highlights"]
+        oldest = [h for h in highlights if h["label"] == "Conta mais antiga"]
+        assert len(oldest) == 1
+        assert oldest[0]["value"] == "Old Account"
+        assert "2015" in oldest[0]["detail"]
