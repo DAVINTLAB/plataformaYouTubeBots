@@ -1,34 +1,40 @@
-# Skills — Guias de Implementação por User Story
+# Skills — Guias de Implementação
 
-Cada arquivo detalha o contrato de API, schemas de banco, lógica de service,
-componentes React sugeridos, casos de erro e dependências com outras USs.
+## User Stories (`us/`)
 
-| Arquivo                       | US    | Escopo                                          |
-|-------------------------------|-------|-------------------------------------------------|
-| [us-00-infra.md](us-00-infra.md)           | US-00 | CI/CD, pre-commit hooks, Dependabot, proteção de branch |
-| [us-01-auth.md](us-01-auth.md)             | US-01 | Login, logout, gestão de usuários (admin/user)  |
-| [us-02-collect.md](us-02-collect.md)       | US-02 | Coleta de comentários via YouTube Data API      |
-| [us-03-clean.md](us-03-clean.md)           | US-03 | Seleção estatística/comportamental de usuários suspeitos |
-| [us-04-annotate.md](us-04-annotate.md)     | US-04 | Anotação de comentários por usuário do YouTube  |
-| [us-05-review.md](us-05-review.md)         | US-05 | Desempate de conflitos e revisão de bots (admin)|
-| [us-06-dashboard.md](us-06-dashboard.md)   | US-06 | Dashboard global e individual com Plotly        |
+Cada arquivo detalha o contrato de API, schemas, lógica de service, componentes React e testes.
 
-| [readme-gen.md](readme-gen.md) | —     | Geração consistente de READMEs (raiz, backend, frontend) |
+| Arquivo | US | Status |
+|---------|-----|--------|
+| [us-00-infra.md](us/us-00-infra.md) | US-00 · Infraestrutura e CI/CD | Concluída |
+| [us-01-auth.md](us/us-01-auth.md) | US-01 · Autenticação e gestão de usuários | Concluída |
+| [us-02-collect.md](us/us-02-collect.md) | US-02 · Coleta de comentários YouTube | Concluída |
+| [us-03-clean.md](us/us-03-clean.md) | US-03 · Limpeza e seleção de dataset | Concluída |
+| [us-04-annotate.md](us/us-04-annotate.md) | US-04 · Anotação de comentários | Concluída |
+| [us-05-review.md](us/us-05-review.md) | US-05 · Revisão de conflitos | Concluída |
+| [us-06-dashboard.md](us/us-06-dashboard.md) | US-06 · Dashboard de análise | Concluída |
+| [us-07-data-catalog.md](us/us-07-data-catalog.md) | US-07 · Catálogo de dados | Concluída |
+
+## Qualidade e Segurança (`qualidade/`)
+
+| Arquivo | Escopo |
+|---------|--------|
+| [quality-security.md](qualidade/quality-security.md) | 5 fases: cobertura, OWASP, frontend, E2E, monitoramento |
+
+## Utilitários
+
+| Arquivo | Escopo |
+|---------|--------|
+| [readme-gen.md](readme-gen.md) | Geração de READMEs (raiz, backend, frontend) |
 
 ## Fluxo entre USs
 
 ```
-US-00 (Infra) — base para todas as outras
+US-00 (Infra) — base para todas
 
-US-01 (Auth)  — JWT necessário em todas as outras
+US-01 (Auth) — JWT necessário em todas
 
-US-02 (Coleta) → US-03 (Limpeza) → US-04 (Anotação) → US-05 (Desempate)
-                                            └─────────────────────────→ US-06 (Dashboard)
+US-02 (Coleta) → US-03 (Limpeza) → US-04 (Anotação) → US-05 (Revisão)
+                                           └──────────────────────→ US-06 (Dashboard)
+                                                                    US-07 (Catálogo)
 ```
-
-## Papéis
-
-| Role    | Acesso                                                        |
-|---------|---------------------------------------------------------------|
-| `admin` | Tudo: gestão de usuários, coleta, limpeza, anotação, desempate, dashboard |
-| `user`  | Coleta, limpeza, anotação, dashboard                          |
