@@ -11,7 +11,9 @@ class Annotation(Base):
     __tablename__ = "annotations"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"))
+    dataset_entry_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("dataset_entries.id")
+    )
     annotator_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     label: Mapped[str] = mapped_column(String(8), nullable=False)
     justificativa: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -20,11 +22,11 @@ class Annotation(Base):
         default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    comment: Mapped["Comment"] = relationship()  # noqa: F821
+    dataset_entry: Mapped["DatasetEntry"] = relationship()  # noqa: F821
     annotator: Mapped["User"] = relationship()  # noqa: F821
 
     __table_args__ = (
-        UniqueConstraint("comment_id", "annotator_id", name="uq_comment_annotator"),
+        UniqueConstraint("dataset_entry_id", "annotator_id", name="uq_entry_annotator"),
         CheckConstraint("label IN ('bot', 'humano')", name="ck_valid_label"),
     )
 
@@ -33,8 +35,8 @@ class AnnotationConflict(Base):
     __tablename__ = "annotation_conflicts"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    comment_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("comments.id"), unique=True
+    dataset_entry_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("dataset_entries.id"), unique=True
     )
     annotation_a_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("annotations.id"))
     annotation_b_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("annotations.id"))

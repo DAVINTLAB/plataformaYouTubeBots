@@ -60,6 +60,7 @@ def _make_dataset(db, collection_id, user_id, author_channel_ids):
     db.add(ds)
     db.flush()
 
+    entries = []
     for channel_id in author_channel_ids:
         entry = DatasetEntry(
             dataset_id=ds.id,
@@ -69,8 +70,9 @@ def _make_dataset(db, collection_id, user_id, author_channel_ids):
             matched_criteria=["percentil"],
         )
         db.add(entry)
+        entries.append(entry)
     db.flush()
-    return ds
+    return ds, entries
 
 
 @pytest.fixture
@@ -89,15 +91,16 @@ def second_user(db):
 
 @pytest.fixture
 def setup_data(db, regular_user):
-    """Cria coleta, comentários e dataset para testes de anotação."""
+    """Cria coleta, comentários, dataset e entries para testes de anotação."""
     col = _make_collection(db, regular_user.id)
     comments = _make_comments(db, col.id, "UC_author1", count=3)
-    ds = _make_dataset(db, col.id, regular_user.id, ["UC_author1"])
+    ds, entries = _make_dataset(db, col.id, regular_user.id, ["UC_author1"])
     db.commit()
     return {
         "collection": col,
         "comments": comments,
         "dataset": ds,
+        "entry": entries[0],
     }
 
 
@@ -108,11 +111,11 @@ def setup_data(db, regular_user):
 
 class TestAnnotationValidation:
     def test_bot_sem_justificativa_retorna_422(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "",
             },
@@ -120,11 +123,11 @@ class TestAnnotationValidation:
         assert resp.status_code == 422
 
     def test_bot_com_justificativa_aceita(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Texto repetido.",
             },
@@ -133,11 +136,11 @@ class TestAnnotationValidation:
         assert resp.json()["label"] == "bot"
 
     def test_humano_sem_justificativa_aceita(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "humano",
             },
         )
@@ -145,11 +148,11 @@ class TestAnnotationValidation:
         assert resp.json()["label"] == "humano"
 
     def test_label_invalido_retorna_422(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "incerto",
             },
         )
@@ -163,13 +166,12 @@ class TestAnnotationValidation:
 
 class TestAnnotationAuth:
     def test_sem_token_retorna_401(self, client, setup_data):
-        comment = setup_data["comments"][0]
-        # Limpar override de auth
+        entry = setup_data["entry"]
         app.dependency_overrides.pop(get_current_user, None)
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "humano",
             },
         )
@@ -189,12 +191,12 @@ class TestAnnotationAuth:
 
 class TestUpsertAnnotation:
     def test_reannotation_altera_label(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
         # Primeira anotação: humano
         resp1 = client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
         assert resp1.status_code == 200
         ann_id = resp1.json()["annotation_id"]
@@ -203,21 +205,20 @@ class TestUpsertAnnotation:
         resp2 = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Mudei de ideia.",
             },
         )
         assert resp2.status_code == 200
-        # Mesmo annotation_id (upsert, não duplicata)
         assert resp2.json()["annotation_id"] == ann_id
         assert resp2.json()["label"] == "bot"
 
-    def test_comentario_inexistente_retorna_404(self, client, auth_as_user):
+    def test_entry_inexistente_retorna_404(self, client, auth_as_user):
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(uuid.uuid4()),
+                "entry_id": str(uuid.uuid4()),
                 "label": "humano",
             },
         )
@@ -233,44 +234,40 @@ class TestConflictDetection:
     def test_labels_iguais_sem_conflito(
         self, client, db, auth_as_user, setup_data, second_user
     ):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # User A anota humano
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        # User B anota humano
         app.dependency_overrides[get_current_user] = lambda: second_user
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
         conflicts = (
-            db.query(AnnotationConflict).filter_by(comment_id=comment.id).count()
+            db.query(AnnotationConflict).filter_by(dataset_entry_id=entry.id).count()
         )
         assert conflicts == 0
 
     def test_labels_diferentes_cria_conflito(
         self, client, db, auth_as_user, setup_data, second_user
     ):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # User A anota humano
         resp1 = client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
         assert resp1.json()["conflict_created"] is False
 
-        # User B anota bot
         app.dependency_overrides[get_current_user] = lambda: second_user
         resp2 = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Spam.",
             },
@@ -278,77 +275,71 @@ class TestConflictDetection:
         assert resp2.json()["conflict_created"] is True
 
         conflicts = (
-            db.query(AnnotationConflict).filter_by(comment_id=comment.id).count()
+            db.query(AnnotationConflict).filter_by(dataset_entry_id=entry.id).count()
         )
         assert conflicts == 1
 
-    def test_segundo_conflito_mesmo_comentario_nao_duplica(
+    def test_segundo_conflito_mesmo_entry_nao_duplica(
         self, client, db, auth_as_user, setup_data, second_user
     ):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # User A anota humano
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        # User B anota bot → conflito
         app.dependency_overrides[get_current_user] = lambda: second_user
         client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Spam.",
             },
         )
 
-        # User B reanota bot (mantém divergência) → NÃO duplica conflito
         client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Spam confirmado.",
             },
         )
 
         conflicts = (
-            db.query(AnnotationConflict).filter_by(comment_id=comment.id).count()
+            db.query(AnnotationConflict).filter_by(dataset_entry_id=entry.id).count()
         )
         assert conflicts == 1
 
     def test_concordancia_apos_conflito_remove_conflito(
         self, client, db, auth_as_user, setup_data, second_user
     ):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # User A anota humano
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        # User B anota bot → conflito
         app.dependency_overrides[get_current_user] = lambda: second_user
         client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Spam.",
             },
         )
 
-        # User B muda para humano → concordam → conflito removido
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
         conflicts = (
-            db.query(AnnotationConflict).filter_by(comment_id=comment.id).count()
+            db.query(AnnotationConflict).filter_by(dataset_entry_id=entry.id).count()
         )
         assert conflicts == 0
 
@@ -361,12 +352,12 @@ class TestConflictDetection:
 class TestListDatasetUsers:
     def test_lista_usuarios_com_progresso(self, client, auth_as_user, setup_data):
         ds = setup_data["dataset"]
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # Anotar um comentário
+        # Anotar o entry
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
         resp = client.get(f"/annotate/users?dataset_id={ds.id}")
@@ -375,11 +366,11 @@ class TestListDatasetUsers:
 
         assert data["dataset_id"] == str(ds.id)
         assert data["total_users"] == 1
-        assert data["annotated_comments_by_me"] == 1
+        assert data["annotated_users_by_me"] == 1
 
         item = data["items"][0]
-        assert item["my_annotated_count"] == 1
-        assert item["my_pending_count"] == 2  # 3 comments - 1 annotated
+        assert item["is_annotated_by_me"] is True
+        assert item["my_label"] == "humano"
 
     def test_dataset_inexistente_retorna_404(self, client, auth_as_user):
         resp = client.get(f"/annotate/users?dataset_id={uuid.uuid4()}")
@@ -395,27 +386,23 @@ class TestGetEntryComments:
     def test_retorna_comentarios_com_anotacao(
         self, client, db, auth_as_user, setup_data
     ):
-        ds = setup_data["dataset"]
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # Anotar
+        # Anotar o entry
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        entry = db.query(DatasetEntry).filter_by(dataset_id=ds.id).first()
         resp = client.get(f"/annotate/comments/{entry.id}")
         assert resp.status_code == 200
 
         data = resp.json()
         assert data["author_display_name"] == "User UC_author1"
         assert len(data["comments"]) == 3
-
-        # Primeiro comentário deve ter anotação
-        annotated = [c for c in data["comments"] if c["my_annotation"] is not None]
-        assert len(annotated) == 1
-        assert annotated[0]["my_annotation"]["label"] == "humano"
+        # Anotação está no nível do entry, não do comment
+        assert data["my_annotation"] is not None
+        assert data["my_annotation"]["label"] == "humano"
 
     def test_entry_inexistente_retorna_404(self, client, auth_as_user):
         resp = client.get(f"/annotate/comments/{uuid.uuid4()}")
@@ -432,17 +419,15 @@ class TestMyProgress:
         resp = client.get("/annotate/my-progress")
         assert resp.status_code == 200
         data = resp.json()
-        # Dataset existe mas pode ter 0 anotações
         if len(data) > 0:
             assert data[0]["annotated"] == 0
 
     def test_progresso_atualiza_apos_anotacao(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # Anotar
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
         resp = client.get("/annotate/my-progress")
@@ -463,18 +448,14 @@ class TestMyProgress:
 
 class TestImport:
     def test_import_cria_anotacoes(self, client, auth_as_user, setup_data):
-        comments = setup_data["comments"]
+        entry = setup_data["entry"]
 
         resp = client.post(
             "/annotate/import",
             json={
                 "annotations": [
                     {
-                        "comment_db_id": str(comments[0].id),
-                        "label": "humano",
-                    },
-                    {
-                        "comment_db_id": str(comments[1].id),
+                        "entry_id": str(entry.id),
                         "label": "bot",
                         "justificativa": "Spam.",
                     },
@@ -483,30 +464,28 @@ class TestImport:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["imported"] == 2
+        assert data["imported"] == 1
         assert data["updated"] == 0
         assert data["skipped"] == 0
 
     def test_import_upsert_nao_duplica(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # Primeira vez
         client.post(
             "/annotate/import",
             json={
                 "annotations": [
-                    {"comment_db_id": str(comment.id), "label": "humano"},
+                    {"entry_id": str(entry.id), "label": "humano"},
                 ],
             },
         )
 
-        # Segunda vez — upsert
         resp = client.post(
             "/annotate/import",
             json={
                 "annotations": [
                     {
-                        "comment_db_id": str(comment.id),
+                        "entry_id": str(entry.id),
                         "label": "bot",
                         "justificativa": "Mudei de ideia.",
                     },
@@ -517,13 +496,13 @@ class TestImport:
         assert data["imported"] == 0
         assert data["updated"] == 1
 
-    def test_import_comentario_inexistente_skip(self, client, auth_as_user):
+    def test_import_entry_inexistente_skip(self, client, auth_as_user):
         resp = client.post(
             "/annotate/import",
             json={
                 "annotations": [
                     {
-                        "comment_db_id": str(uuid.uuid4()),
+                        "entry_id": str(uuid.uuid4()),
                         "label": "humano",
                     },
                 ],
@@ -534,13 +513,13 @@ class TestImport:
         assert len(data["errors"]) == 1
 
     def test_import_bot_sem_justificativa_skip(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         resp = client.post(
             "/annotate/import",
             json={
                 "annotations": [
                     {
-                        "comment_db_id": str(comment.id),
+                        "entry_id": str(entry.id),
                         "label": "bot",
                         "justificativa": "",
                     },
@@ -560,59 +539,47 @@ class TestExport:
     def test_export_json_retorna_apenas_minhas_anotacoes(
         self, client, db, auth_as_user, setup_data, second_user
     ):
-        comments = setup_data["comments"]
+        entry = setup_data["entry"]
 
-        # User A anota comment 0
+        # User A anota
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comments[0].id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        # User B anota comment 1
-        app.dependency_overrides[get_current_user] = lambda: second_user
-        client.post(
-            "/annotate",
-            json={"comment_db_id": str(comments[1].id), "label": "humano"},
-        )
-
-        # User A exporta
-        app.dependency_overrides[get_current_user] = lambda: auth_as_user
         resp = client.get("/annotate/export?format=json")
         assert resp.status_code == 200
-
-        # Deve vir ao menos o comentário de User A
         data = resp.json()
         assert "annotations" in data
 
     def test_export_csv(self, client, auth_as_user, setup_data):
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
         client.post(
             "/annotate",
-            json={"comment_db_id": str(comment.id), "label": "humano"},
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
         resp = client.get("/annotate/export?format=csv")
         assert resp.status_code == 200
         assert "text/csv" in resp.headers["content-type"]
         lines = resp.text.strip().split("\n")
-        assert lines[0] == "comment_db_id,label,justificativa"
+        assert lines[0] == "entry_id,author_channel_id,label,justificativa"
         assert len(lines) >= 2
 
 
 # ---------------------------------------------------------------------------
-# Testes adicionais — cobertura 100%
+# Testes adicionais — cobertura
 # ---------------------------------------------------------------------------
 
 
 class TestAdminCannotAnnotate:
     def test_admin_post_annotate_retorna_403(self, client, auth_as_admin, setup_data):
-        """Admin nao pode anotar — apenas revisar conflitos."""
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "humano",
             },
         )
@@ -630,13 +597,11 @@ class TestListDatasetUsersAdmin:
         regular_user,
         setup_data,
     ):
-        """Admin ve contagem de anotacoes de todos."""
         from models.annotation import Annotation
 
-        comment = setup_data["comments"][0]
-        # Criar anotacao como regular_user diretamente no DB
+        entry = setup_data["entry"]
         ann = Annotation(
-            comment_id=comment.id,
+            dataset_entry_id=entry.id,
             annotator_id=regular_user.id,
             label="humano",
         )
@@ -647,36 +612,29 @@ class TestListDatasetUsersAdmin:
         resp = client.get(f"/annotate/users?dataset_id={ds.id}")
         assert resp.status_code == 200
         data = resp.json()
-        # Admin ve total_annotated global (1 anotacao)
-        assert data["annotated_comments_by_me"] == 1
+        assert data["annotated_users_by_me"] == 1
 
 
 class TestListDatasetUsersFilters:
     def test_only_pending_filter(self, client, auth_as_user, setup_data):
-        """Filtro only_pending retorna apenas usuarios pendentes."""
         ds = setup_data["dataset"]
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # Anotar 1 de 3 comentarios
+        # Anotar o entry
         client.post(
             "/annotate",
-            json={
-                "comment_db_id": str(comment.id),
-                "label": "humano",
-            },
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        resp = client.get(f"/annotate/users?dataset_id={ds.id}" "&only_pending=true")
+        resp = client.get(f"/annotate/users?dataset_id={ds.id}&only_pending=true")
         assert resp.status_code == 200
         data = resp.json()
-        # Ainda ha pendencias
-        for item in data["items"]:
-            assert item["my_pending_count"] > 0
+        # O único entry foi anotado, então sem pendentes
+        assert data["total_users"] == 0
 
     def test_pending_first_ordering(self, client, auth_as_user, setup_data):
-        """Filtro pending_first ordena por pendencias desc."""
         ds = setup_data["dataset"]
-        resp = client.get(f"/annotate/users?dataset_id={ds.id}" "&pending_first=true")
+        resp = client.get(f"/annotate/users?dataset_id={ds.id}&pending_first=true")
         assert resp.status_code == 200
         assert len(resp.json()["items"]) >= 1
 
@@ -691,69 +649,58 @@ class TestGetEntryCommentsAdmin:
         regular_user,
         setup_data,
     ):
-        """Admin ve all_annotations com nomes dos anotadores."""
         from models.annotation import Annotation
 
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         ann = Annotation(
-            comment_id=comment.id,
+            dataset_entry_id=entry.id,
             annotator_id=regular_user.id,
             label="humano",
         )
         db.add(ann)
         db.commit()
 
-        ds = setup_data["dataset"]
-        entry = db.query(DatasetEntry).filter_by(dataset_id=ds.id).first()
         resp = client.get(f"/annotate/comments/{entry.id}")
         assert resp.status_code == 200
         data = resp.json()
 
-        annotated = [c for c in data["comments"] if c["all_annotations"] is not None]
-        assert len(annotated) >= 1
-        first_ann = annotated[0]["all_annotations"][0]
-        assert "annotator_name" in first_ann
+        assert data["all_annotations"] is not None
+        assert len(data["all_annotations"]) >= 1
+        assert "annotator_name" in data["all_annotations"][0]
 
 
 class TestConflictReopening:
     def test_reannotation_reabre_conflito_resolvido(
         self, client, db, auth_as_user, setup_data, second_user
     ):
-        """Re-anotacao apos resolucao reabre o conflito."""
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
 
-        # User A anota humano
         client.post(
             "/annotate",
-            json={
-                "comment_db_id": str(comment.id),
-                "label": "humano",
-            },
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        # User B anota bot -> conflito criado
         app.dependency_overrides[get_current_user] = lambda: second_user
         client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Spam.",
             },
         )
 
-        # Resolver conflito manualmente no banco
-        conflict = db.query(AnnotationConflict).filter_by(comment_id=comment.id).first()
+        conflict = (
+            db.query(AnnotationConflict).filter_by(dataset_entry_id=entry.id).first()
+        )
         conflict.status = "resolved"
         conflict.resolved_label = "bot"
         db.commit()
 
-        # User B re-anota bot (mesma label, mas A=humano)
-        # Labels divergem: A=humano vs B=bot -> reabre
         resp = client.post(
             "/annotate",
             json={
-                "comment_db_id": str(comment.id),
+                "entry_id": str(entry.id),
                 "label": "bot",
                 "justificativa": "Confirmo spam.",
             },
@@ -776,12 +723,11 @@ class TestGetAllProgress:
         regular_user,
         setup_data,
     ):
-        """Admin ve progresso de todos os anotadores."""
         from models.annotation import Annotation
 
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         ann = Annotation(
-            comment_id=comment.id,
+            dataset_entry_id=entry.id,
             annotator_id=regular_user.id,
             label="humano",
         )
@@ -791,35 +737,31 @@ class TestGetAllProgress:
         resp = client.get("/annotate/all-progress")
         assert resp.status_code == 200
         data = resp.json()
-        # Deve conter pelo menos o regular_user
         assert any(p["annotator_name"] == "Usuário Teste" for p in data)
 
     def test_all_progress_exclui_admin(
         self, client, db, auth_as_admin, admin_user, setup_data
     ):
-        """Admin nao aparece como anotador no all-progress."""
         resp = client.get("/annotate/all-progress")
         assert resp.status_code == 200
         data = resp.json()
-        for entry in data:
-            assert entry["annotator_name"] != admin_user.name
+        for p in data:
+            assert p["annotator_name"] != admin_user.name
 
     def test_all_progress_requer_admin(self, client, auth_as_user):
-        """Endpoint all-progress requer role admin."""
         resp = client.get("/annotate/all-progress")
         assert resp.status_code == 403
 
 
 class TestImportAnnotationsChunk:
     def test_import_chunk_retorna_totais(self, client, auth_as_user, setup_data):
-        """Import-chunk retorna contadores do batch."""
-        comments = setup_data["comments"]
+        entry = setup_data["entry"]
         resp = client.post(
             "/annotate/import-chunk",
             json={
                 "annotations": [
                     {
-                        "comment_db_id": str(comments[0].id),
+                        "entry_id": str(entry.id),
                         "label": "humano",
                     },
                 ],
@@ -835,19 +777,15 @@ class TestImportAnnotationsChunk:
 
 class TestExportWithDatasetFilter:
     def test_export_json_com_dataset_id(self, client, auth_as_user, setup_data):
-        """Export JSON filtrado por dataset_id inclui metadados."""
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         ds = setup_data["dataset"]
 
         client.post(
             "/annotate",
-            json={
-                "comment_db_id": str(comment.id),
-                "label": "humano",
-            },
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        resp = client.get(f"/annotate/export?format=json" f"&dataset_id={ds.id}")
+        resp = client.get(f"/annotate/export?format=json&dataset_id={ds.id}")
         assert resp.status_code == 200
         data = resp.json()
         assert "dataset_id" in data
@@ -856,32 +794,23 @@ class TestExportWithDatasetFilter:
         assert "annotations" in data
 
     def test_export_csv_com_dataset_id(self, client, auth_as_user, setup_data):
-        """Export CSV filtrado por dataset_id funciona."""
-        comment = setup_data["comments"][0]
+        entry = setup_data["entry"]
         ds = setup_data["dataset"]
 
         client.post(
             "/annotate",
-            json={
-                "comment_db_id": str(comment.id),
-                "label": "humano",
-            },
+            json={"entry_id": str(entry.id), "label": "humano"},
         )
 
-        resp = client.get(f"/annotate/export?format=csv" f"&dataset_id={ds.id}")
+        resp = client.get(f"/annotate/export?format=csv&dataset_id={ds.id}")
         assert resp.status_code == 200
         assert "text/csv" in resp.headers["content-type"]
         lines = resp.text.strip().split("\n")
-        assert lines[0] == "comment_db_id,label,justificativa"
-
-
-# -------------------------------------------------------------------
-# Cobertura adicional — get_all_progress total_comments == 0
-# -------------------------------------------------------------------
+        assert lines[0] == "entry_id,author_channel_id,label,justificativa"
 
 
 class TestGetAllProgressZeroComments:
-    def test_dataset_sem_comments_pulado_no_all_progress(
+    def test_dataset_sem_entries_pulado_no_all_progress(
         self,
         client,
         db,
@@ -889,9 +818,7 @@ class TestGetAllProgressZeroComments:
         admin_user,
         regular_user,
     ):
-        """Dataset com 0 comentarios e ignorado no all-progress."""
         col = _make_collection(db, admin_user.id, video_id="vid_empty_prog")
-        # Dataset com entry mas sem comentarios reais
         ds = Dataset(
             name=f"empty_ap_{uuid.uuid4().hex[:6]}",
             collection_id=col.id,
@@ -907,6 +834,5 @@ class TestGetAllProgressZeroComments:
         resp = client.get("/annotate/all-progress")
         assert resp.status_code == 200
         data = resp.json()
-        # Dataset sem comments nao aparece
         ds_ids = [p["dataset_id"] for p in data]
         assert str(ds.id) not in ds_ids

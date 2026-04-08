@@ -61,19 +61,22 @@ def test_seed_creates_correct_annotations(client, db, auth_as_admin):
 
     col = db.query(Collection).filter(Collection.video_id == SEED_VIDEO_ID).first()
 
-    # Contar anotações
-    comment_ids = (
-        db.query(Comment.id).filter(Comment.collection_id == col.id).subquery()
+    # Contar anotações (agora por entry, não por comment)
+    from models.dataset import Dataset, DatasetEntry
+
+    ds = db.query(Dataset).filter(Dataset.collection_id == col.id).first()
+    entry_ids = (
+        db.query(DatasetEntry.id).filter(DatasetEntry.dataset_id == ds.id).subquery()
     )
     ann_count = (
-        db.query(Annotation).filter(Annotation.comment_id.in_(comment_ids)).count()
+        db.query(Annotation).filter(Annotation.dataset_entry_id.in_(entry_ids)).count()
     )
     assert ann_count == resp.json()["annotations_created"]
 
     # Contar conflitos
     conflict_count = (
         db.query(AnnotationConflict)
-        .filter(AnnotationConflict.comment_id.in_(comment_ids))
+        .filter(AnnotationConflict.dataset_entry_id.in_(entry_ids))
         .count()
     )
     assert conflict_count == resp.json()["conflicts_created"]

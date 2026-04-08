@@ -1,4 +1,8 @@
-"""Serviço da US-04 — anotação de comentários (bot/humano)."""
+"""Serviço da US-04 — anotação de usuários do YouTube (bot/humano).
+
+Unidade de anotação: DatasetEntry (autor/canal do YouTube).
+Comentários são evidências — a classificação é do autor, não do comentário.
+"""
 
 import csv
 import io
@@ -49,124 +53,124 @@ def list_dataset_users(
         .subquery()
     )
 
-    # Subquery: annotated_count por autor
+    # Subquery: anotação do pesquisador para cada entry
     if is_admin:
         ann_sub = (
             db.query(
-                Comment.author_channel_id,
-                func.count(func.distinct(Annotation.comment_id)).label("ac"),
+                Annotation.dataset_entry_id,
+                func.count(func.distinct(Annotation.annotator_id)).label("ac"),
             )
-            .join(Annotation, Annotation.comment_id == Comment.id)
-            .filter(Comment.collection_id == collection_id)
-            .group_by(Comment.author_channel_id)
+            .group_by(Annotation.dataset_entry_id)
             .subquery()
         )
     else:
         ann_sub = (
             db.query(
-                Comment.author_channel_id,
-                func.count(Annotation.id).label("ac"),
+                Annotation.dataset_entry_id,
+                Annotation.label,
             )
-            .join(Annotation, Annotation.comment_id == Comment.id)
-            .filter(
-                Comment.collection_id == collection_id,
-                Annotation.annotator_id == annotator_id,
-            )
-            .group_by(Comment.author_channel_id)
+            .filter(Annotation.annotator_id == annotator_id)
             .subquery()
         )
 
-    # Query base com LEFT JOINs para contagens
     cc_col = func.coalesce(comment_count_sub.c.cc, 0)
-    ac_col = func.coalesce(ann_sub.c.ac, 0)
-    pending_col = (cc_col - ac_col).label("pending")
 
-    base_query = (
-        db.query(DatasetEntry, cc_col.label("cc"), ac_col.label("ac"), pending_col)
-        .outerjoin(
-            comment_count_sub,
-            comment_count_sub.c.author_channel_id == DatasetEntry.author_channel_id,
+    if is_admin:
+        ac_col = func.coalesce(ann_sub.c.ac, 0)
+        base_query = (
+            db.query(DatasetEntry, cc_col.label("cc"), ac_col.label("ac"))
+            .outerjoin(
+                comment_count_sub,
+                comment_count_sub.c.author_channel_id == DatasetEntry.author_channel_id,
+            )
+            .outerjoin(ann_sub, ann_sub.c.dataset_entry_id == DatasetEntry.id)
+            .filter(DatasetEntry.dataset_id == dataset_id)
         )
-        .outerjoin(
-            ann_sub,
-            ann_sub.c.author_channel_id == DatasetEntry.author_channel_id,
+    else:
+        base_query = (
+            db.query(
+                DatasetEntry,
+                cc_col.label("cc"),
+                ann_sub.c.label.label("my_label"),
+            )
+            .outerjoin(
+                comment_count_sub,
+                comment_count_sub.c.author_channel_id == DatasetEntry.author_channel_id,
+            )
+            .outerjoin(ann_sub, ann_sub.c.dataset_entry_id == DatasetEntry.id)
+            .filter(DatasetEntry.dataset_id == dataset_id)
         )
-        .filter(DatasetEntry.dataset_id == dataset_id)
-    )
 
     if only_pending:
-        base_query = base_query.filter(pending_col > 0)
+        if is_admin:
+            base_query = base_query.filter(ac_col == 0)
+        else:
+            base_query = base_query.filter(ann_sub.c.label.is_(None))
 
-    # Total filtrado
     total_users = base_query.count()
 
-    # Ordenação
     if pending_first:
-        order = [pending_col.desc(), DatasetEntry.author_display_name]
+        if is_admin:
+            order = [ac_col.asc(), DatasetEntry.author_display_name]
+        else:
+            order = [ann_sub.c.label.asc(), DatasetEntry.author_display_name]
     else:
         order = [DatasetEntry.author_display_name]
 
     offset = (page - 1) * page_size
     rows = base_query.order_by(*order).offset(offset).limit(page_size).all()
 
-    # Totais globais (sem filtro only_pending)
-    all_author_ids_sub = (
-        db.query(DatasetEntry.author_channel_id)
-        .filter(DatasetEntry.dataset_id == dataset_id)
-        .subquery()
-    )
-
-    total_comments = (
-        db.query(func.count(Comment.id))
-        .filter(
-            Comment.collection_id == collection_id,
-            Comment.author_channel_id.in_(all_author_ids_sub.select()),
-        )
-        .scalar()
-    ) or 0
-
+    # Total global de anotados
     if is_admin:
         total_annotated = (
-            db.query(func.count(func.distinct(Annotation.comment_id)))
-            .join(Comment, Annotation.comment_id == Comment.id)
-            .filter(
-                Comment.collection_id == collection_id,
-                Comment.author_channel_id.in_(all_author_ids_sub.select()),
-            )
+            db.query(func.count(func.distinct(Annotation.dataset_entry_id)))
+            .join(DatasetEntry, Annotation.dataset_entry_id == DatasetEntry.id)
+            .filter(DatasetEntry.dataset_id == dataset_id)
             .scalar()
         ) or 0
     else:
         total_annotated = (
             db.query(func.count(Annotation.id))
-            .join(Comment, Annotation.comment_id == Comment.id)
+            .join(DatasetEntry, Annotation.dataset_entry_id == DatasetEntry.id)
             .filter(
-                Comment.collection_id == collection_id,
-                Comment.author_channel_id.in_(all_author_ids_sub.select()),
+                DatasetEntry.dataset_id == dataset_id,
                 Annotation.annotator_id == annotator_id,
             )
             .scalar()
         ) or 0
 
-    # Montar items a partir das rows (contagens já vêm da query)
     items = []
-    for entry, cc, ac, _pending in rows:
-        items.append(
-            {
-                "entry_id": entry.id,
-                "author_channel_id": entry.author_channel_id,
-                "author_display_name": entry.author_display_name,
-                "comment_count": cc,
-                "my_annotated_count": ac,
-                "my_pending_count": cc - ac,
-            }
-        )
+    for row in rows:
+        if is_admin:
+            entry, cc, ac = row
+            items.append(
+                {
+                    "entry_id": entry.id,
+                    "author_channel_id": entry.author_channel_id,
+                    "author_display_name": entry.author_display_name,
+                    "comment_count": cc,
+                    "is_annotated_by_me": ac > 0,
+                    "my_label": None,
+                }
+            )
+        else:
+            entry, cc, my_label = row
+            items.append(
+                {
+                    "entry_id": entry.id,
+                    "author_channel_id": entry.author_channel_id,
+                    "author_display_name": entry.author_display_name,
+                    "comment_count": cc,
+                    "is_annotated_by_me": my_label is not None,
+                    "my_label": my_label,
+                }
+            )
 
     return {
         "dataset_id": dataset.id,
         "dataset_name": dataset.name,
         "total_users": total_users,
-        "total_comments": total_comments,
-        "annotated_comments_by_me": total_annotated,
+        "annotated_users_by_me": total_annotated,
         "page": page,
         "page_size": page_size,
         "total_pages": _total_pages(total_users, page_size),
@@ -178,7 +182,7 @@ def _total_pages(total: int, page_size: int) -> int:
     return max(1, (total + page_size - 1) // page_size)
 
 
-# ─── Comentários de um usuário (entry) ──────────────────────────────────────
+# ─── Comentários de um usuário (entry) — evidências ──────────────────────
 
 
 def get_entry_comments(
@@ -206,60 +210,59 @@ def get_entry_comments(
         .all()
     )
 
-    result_comments = []
-    for c in comments:
-        # Anotação do pesquisador logado
-        my_ann = None
-        if not is_admin:
-            annotation = (
-                db.query(Annotation)
-                .filter(
-                    Annotation.comment_id == c.id,
-                    Annotation.annotator_id == annotator_id,
-                )
-                .first()
-            )
-            if annotation:
-                my_ann = {
-                    "label": annotation.label,
-                    "justificativa": annotation.justificativa,
-                    "annotated_at": annotation.annotated_at,
-                }
+    result_comments = [
+        {
+            "comment_db_id": c.id,
+            "text_original": c.text_original,
+            "like_count": c.like_count,
+            "reply_count": c.reply_count,
+            "published_at": c.published_at,
+        }
+        for c in comments
+    ]
 
-        # Admin vê todas as anotações de todos os pesquisadores
-        all_anns = None
-        if is_admin:
-            annotations = (
-                db.query(Annotation).filter(Annotation.comment_id == c.id).all()
+    # Anotação do pesquisador logado (por entry, não por comment)
+    my_ann = None
+    if not is_admin:
+        annotation = (
+            db.query(Annotation)
+            .filter(
+                Annotation.dataset_entry_id == entry.id,
+                Annotation.annotator_id == annotator_id,
             )
-            if annotations:
-                all_anns = [
-                    {
-                        "annotator_name": a.annotator.name,
-                        "label": a.label,
-                        "justificativa": a.justificativa,
-                        "annotated_at": a.annotated_at,
-                    }
-                    for a in annotations
-                ]
-
-        result_comments.append(
-            {
-                "comment_db_id": c.id,
-                "text_original": c.text_original,
-                "like_count": c.like_count,
-                "reply_count": c.reply_count,
-                "published_at": c.published_at,
-                "my_annotation": my_ann,
-                "all_annotations": all_anns,
-            }
+            .first()
         )
+        if annotation:
+            my_ann = {
+                "label": annotation.label,
+                "justificativa": annotation.justificativa,
+                "annotated_at": annotation.annotated_at,
+            }
+
+    # Admin vê todas as anotações de todos os pesquisadores (por entry)
+    all_anns = None
+    if is_admin:
+        annotations = (
+            db.query(Annotation).filter(Annotation.dataset_entry_id == entry.id).all()
+        )
+        if annotations:
+            all_anns = [
+                {
+                    "annotator_name": a.annotator.name,
+                    "label": a.label,
+                    "justificativa": a.justificativa,
+                    "annotated_at": a.annotated_at,
+                }
+                for a in annotations
+            ]
 
     return {
         "entry_id": entry.id,
         "author_display_name": entry.author_display_name,
         "author_channel_id": entry.author_channel_id,
         "comments": result_comments,
+        "my_annotation": my_ann,
+        "all_annotations": all_anns,
     }
 
 
@@ -268,22 +271,21 @@ def get_entry_comments(
 
 def upsert_annotation(
     db: Session,
-    comment_id: uuid.UUID,
+    entry_id: uuid.UUID,
     annotator_id: uuid.UUID,
     label: str,
     justificativa: str | None,
 ) -> dict:
-    # Verificar que o comentário existe
-    comment = db.query(Comment).filter(Comment.id == comment_id).first()
-    if comment is None:
+    entry = db.query(DatasetEntry).filter(DatasetEntry.id == entry_id).first()
+    if entry is None:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail="Comentário não encontrado."
+            status.HTTP_404_NOT_FOUND, detail="Entrada de dataset não encontrada."
         )
 
     # Upsert: cria ou atualiza
     existing = (
         db.query(Annotation)
-        .filter_by(comment_id=comment_id, annotator_id=annotator_id)
+        .filter_by(dataset_entry_id=entry_id, annotator_id=annotator_id)
         .first()
     )
 
@@ -294,7 +296,7 @@ def upsert_annotation(
         annotation = existing
     else:
         annotation = Annotation(
-            comment_id=comment_id,
+            dataset_entry_id=entry_id,
             annotator_id=annotator_id,
             label=label,
             justificativa=justificativa,
@@ -307,7 +309,7 @@ def upsert_annotation(
     other = (
         db.query(Annotation)
         .filter(
-            Annotation.comment_id == comment_id,
+            Annotation.dataset_entry_id == entry_id,
             Annotation.annotator_id != annotator_id,
         )
         .first()
@@ -316,10 +318,12 @@ def upsert_annotation(
     conflict_created = False
 
     if other and other.label != label:
-        conflict = db.query(AnnotationConflict).filter_by(comment_id=comment_id).first()
+        conflict = (
+            db.query(AnnotationConflict).filter_by(dataset_entry_id=entry_id).first()
+        )
         if not conflict:
             conflict = AnnotationConflict(
-                comment_id=comment_id,
+                dataset_entry_id=entry_id,
                 annotation_a_id=other.id,
                 annotation_b_id=annotation.id,
             )
@@ -334,7 +338,9 @@ def upsert_annotation(
             conflict_created = True
     elif other and other.label == label:
         # Labels agora concordam — resolver conflito se existir
-        conflict = db.query(AnnotationConflict).filter_by(comment_id=comment_id).first()
+        conflict = (
+            db.query(AnnotationConflict).filter_by(dataset_entry_id=entry_id).first()
+        )
         if conflict and conflict.status == "pending":
             db.delete(conflict)
 
@@ -342,7 +348,7 @@ def upsert_annotation(
 
     return {
         "annotation_id": annotation.id,
-        "comment_db_id": comment_id,
+        "entry_id": entry_id,
         "label": label,
         "conflict_created": conflict_created,
     }
@@ -359,29 +365,21 @@ def get_my_progress(
 
     result = []
     for ds in datasets:
-        # Total de comentários dos usuários selecionados neste dataset
-        total_comments = (
-            db.query(func.count(Comment.id))
-            .join(
-                DatasetEntry,
-                (DatasetEntry.author_channel_id == Comment.author_channel_id)
-                & (DatasetEntry.dataset_id == ds.id),
-            )
-            .filter(Comment.collection_id == ds.collection_id)
+        total_users = (
+            db.query(func.count(DatasetEntry.id))
+            .filter(DatasetEntry.dataset_id == ds.id)
             .scalar()
         )
 
-        # Minhas anotações para comentários neste dataset
+        if total_users == 0:
+            continue
+
+        # Minhas anotações para entries neste dataset
         my_annotations = (
             db.query(Annotation)
-            .join(Comment, Annotation.comment_id == Comment.id)
-            .join(
-                DatasetEntry,
-                (DatasetEntry.author_channel_id == Comment.author_channel_id)
-                & (DatasetEntry.dataset_id == ds.id),
-            )
+            .join(DatasetEntry, Annotation.dataset_entry_id == DatasetEntry.id)
             .filter(
-                Comment.collection_id == ds.collection_id,
+                DatasetEntry.dataset_id == ds.id,
                 Annotation.annotator_id == annotator_id,
             )
             .all()
@@ -391,18 +389,17 @@ def get_my_progress(
         bots = sum(1 for a in my_annotations if a.label == "bot")
         humans = sum(1 for a in my_annotations if a.label == "humano")
 
-        if total_comments > 0:
-            result.append(
-                {
-                    "dataset_id": ds.id,
-                    "dataset_name": ds.name,
-                    "total_comments": total_comments,
-                    "annotated": annotated,
-                    "bots": bots,
-                    "humans": humans,
-                    "percent_complete": round(annotated / total_comments * 100, 1),
-                }
-            )
+        result.append(
+            {
+                "dataset_id": ds.id,
+                "dataset_name": ds.name,
+                "total_users": total_users,
+                "annotated": annotated,
+                "bots": bots,
+                "humans": humans,
+                "percent_complete": round(annotated / total_users * 100, 1),
+            }
+        )
 
     return result
 
@@ -418,17 +415,12 @@ def get_all_progress(db: Session) -> list[dict]:
 
     result = []
     for ds in datasets:
-        total_comments = (
-            db.query(func.count(Comment.id))
-            .join(
-                DatasetEntry,
-                (DatasetEntry.author_channel_id == Comment.author_channel_id)
-                & (DatasetEntry.dataset_id == ds.id),
-            )
-            .filter(Comment.collection_id == ds.collection_id)
+        total_users = (
+            db.query(func.count(DatasetEntry.id))
+            .filter(DatasetEntry.dataset_id == ds.id)
             .scalar()
         )
-        if total_comments == 0:
+        if total_users == 0:
             continue
 
         for annotator in annotators:
@@ -437,14 +429,9 @@ def get_all_progress(db: Session) -> list[dict]:
 
             annotations = (
                 db.query(Annotation)
-                .join(Comment, Annotation.comment_id == Comment.id)
-                .join(
-                    DatasetEntry,
-                    (DatasetEntry.author_channel_id == Comment.author_channel_id)
-                    & (DatasetEntry.dataset_id == ds.id),
-                )
+                .join(DatasetEntry, Annotation.dataset_entry_id == DatasetEntry.id)
                 .filter(
-                    Comment.collection_id == ds.collection_id,
+                    DatasetEntry.dataset_id == ds.id,
                     Annotation.annotator_id == annotator.id,
                 )
                 .all()
@@ -460,11 +447,11 @@ def get_all_progress(db: Session) -> list[dict]:
                     "annotator_name": annotator.name,
                     "dataset_id": ds.id,
                     "dataset_name": ds.name,
-                    "total_comments": total_comments,
+                    "total_users": total_users,
                     "annotated": annotated,
                     "bots": bots,
                     "humans": humans,
-                    "percent_complete": round(annotated / total_comments * 100, 1),
+                    "percent_complete": round(annotated / total_users * 100, 1),
                 }
             )
 
@@ -485,23 +472,22 @@ def import_annotations(
     errors = []
 
     for item in annotations:
-        comment = db.query(Comment).filter(Comment.id == item.comment_db_id).first()
-        if comment is None:
+        entry = db.query(DatasetEntry).filter(DatasetEntry.id == item.entry_id).first()
+        if entry is None:
             skipped += 1
-            errors.append(f"Comentário {item.comment_db_id} não encontrado.")
+            errors.append(f"Entrada {item.entry_id} não encontrada.")
             continue
 
         if item.label == "bot" and not (item.justificativa or "").strip():
             skipped += 1
             errors.append(
-                f"Comentário {item.comment_db_id}: "
-                "justificativa obrigatória para 'bot'."
+                f"Entrada {item.entry_id}: " "justificativa obrigatória para 'bot'."
             )
             continue
 
         existing = (
             db.query(Annotation)
-            .filter_by(comment_id=item.comment_db_id, annotator_id=annotator_id)
+            .filter_by(dataset_entry_id=item.entry_id, annotator_id=annotator_id)
             .first()
         )
 
@@ -512,7 +498,7 @@ def import_annotations(
             updated += 1
         else:
             annotation = Annotation(
-                comment_id=item.comment_db_id,
+                dataset_entry_id=item.entry_id,
                 annotator_id=annotator_id,
                 label=item.label,
                 justificativa=item.justificativa,
@@ -563,22 +549,12 @@ def export_annotations_json(
     """Gerador de JSON streaming com anotações do pesquisador."""
     query = (
         db.query(Annotation)
-        .join(Comment, Annotation.comment_id == Comment.id)
+        .join(DatasetEntry, Annotation.dataset_entry_id == DatasetEntry.id)
         .filter(Annotation.annotator_id == annotator_id)
     )
 
     if dataset_id:
-        query = (
-            query.join(
-                DatasetEntry,
-                (DatasetEntry.author_channel_id == Comment.author_channel_id)
-                & (DatasetEntry.dataset_id == dataset_id),
-            )
-            .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
-            .filter(
-                Comment.collection_id == Dataset.collection_id,
-            )
-        )
+        query = query.filter(DatasetEntry.dataset_id == dataset_id)
 
     # Metadados do dataset se filtrado
     meta = {}
@@ -606,9 +582,9 @@ def export_annotations_json(
         prefix = "    " if first else ",\n    "
         first = False
         item = {
-            "comment_db_id": str(ann.comment_id),
-            "author_channel_id": ann.comment.author_channel_id,
-            "text_original": ann.comment.text_original,
+            "entry_id": str(ann.dataset_entry_id),
+            "author_channel_id": ann.dataset_entry.author_channel_id,
+            "author_display_name": ann.dataset_entry.author_display_name,
             "label": ann.label,
             "justificativa": ann.justificativa,
             "annotated_at": ann.annotated_at.isoformat() + "Z"
@@ -628,27 +604,24 @@ def export_annotations_csv(
     """Gerador de CSV streaming com anotações do pesquisador."""
     query = (
         db.query(Annotation)
-        .join(Comment, Annotation.comment_id == Comment.id)
+        .join(DatasetEntry, Annotation.dataset_entry_id == DatasetEntry.id)
         .filter(Annotation.annotator_id == annotator_id)
     )
 
     if dataset_id:
-        query = (
-            query.join(
-                DatasetEntry,
-                (DatasetEntry.author_channel_id == Comment.author_channel_id)
-                & (DatasetEntry.dataset_id == dataset_id),
-            )
-            .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
-            .filter(
-                Comment.collection_id == Dataset.collection_id,
-            )
-        )
+        query = query.filter(DatasetEntry.dataset_id == dataset_id)
 
-    yield "comment_db_id,label,justificativa\n"
+    yield "entry_id,author_channel_id,label,justificativa\n"
 
     for ann in query.yield_per(500):
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow([str(ann.comment_id), ann.label, ann.justificativa or ""])
+        writer.writerow(
+            [
+                str(ann.dataset_entry_id),
+                ann.dataset_entry.author_channel_id,
+                ann.label,
+                ann.justificativa or "",
+            ]
+        )
         yield buf.getvalue()

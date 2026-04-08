@@ -157,7 +157,7 @@ def import_endpoint(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    return import_review(db, admin.id, payload.video_id, payload.comments)
+    return import_review(db, admin.id, payload.video_id, payload.users)
 
 
 @router.post("/import-chunk", response_model=ImportChunkResponse)
@@ -166,5 +166,5 @@ def import_chunk_endpoint(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    result = import_review_chunk(db, admin.id, payload.comments, payload.done)
+    result = import_review_chunk(db, admin.id, payload.users, payload.done)
     return ImportChunkResponse(**result)

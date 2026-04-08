@@ -1,4 +1,4 @@
-"""Serviço da US-05 — revisão de conflitos e desempate."""
+"""Serviço da US-05 — revisão de conflitos e desempate por usuário."""
 
 import json
 import logging
@@ -30,19 +30,10 @@ def list_conflicts(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    # Query filtrada com JOINs no SQL (sem carregar tudo em Python)
     query = (
         db.query(AnnotationConflict)
-        .join(Comment, AnnotationConflict.comment_id == Comment.id)
-        .join(
-            DatasetEntry,
-            DatasetEntry.author_channel_id == Comment.author_channel_id,
-        )
-        .join(
-            Dataset,
-            (Dataset.id == DatasetEntry.dataset_id)
-            & (Dataset.collection_id == Comment.collection_id),
-        )
+        .join(DatasetEntry, AnnotationConflict.dataset_entry_id == DatasetEntry.id)
+        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
     )
 
     if conflict_status:
@@ -66,39 +57,44 @@ def list_conflicts(
     if not conflicts:
         return _empty_page(page, page_size, total)
 
-    # Batch load apenas para a página
+    # Batch load
     ann_ids = set()
-    comment_ids = set()
+    entry_ids = set()
     for c in conflicts:
         ann_ids.update([c.annotation_a_id, c.annotation_b_id])
-        comment_ids.add(c.comment_id)
+        entry_ids.add(c.dataset_entry_id)
 
     annotations = db.query(Annotation).filter(Annotation.id.in_(ann_ids)).all()
     ann_map = {a.id: a for a in annotations}
 
-    comments = db.query(Comment).filter(Comment.id.in_(comment_ids)).all()
-    comment_map = {c.id: c for c in comments}
+    entries = db.query(DatasetEntry).filter(DatasetEntry.id.in_(entry_ids)).all()
+    entry_map = {e.id: e for e in entries}
 
     user_ids = {a.annotator_id for a in annotations}
     users = db.query(User).filter(User.id.in_(user_ids)).all()
     user_map = {u.id: u for u in users}
 
-    author_ids = {c.author_channel_id for c in comments}
-    collection_ids = {c.collection_id for c in comments}
-    entries_with_ds = (
-        db.query(DatasetEntry, Dataset)
-        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
-        .filter(
-            DatasetEntry.author_channel_id.in_(author_ids),
-            Dataset.collection_id.in_(collection_ids),
+    ds_ids = {e.dataset_id for e in entries}
+    datasets = db.query(Dataset).filter(Dataset.id.in_(ds_ids)).all()
+    ds_map = {d.id: d for d in datasets}
+
+    # Comment counts por entry
+    comment_counts = (
+        db.query(
+            DatasetEntry.id,
+            func.count(Comment.id).label("cc"),
         )
+        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
+        .join(
+            Comment,
+            (Comment.collection_id == Dataset.collection_id)
+            & (Comment.author_channel_id == DatasetEntry.author_channel_id),
+        )
+        .filter(DatasetEntry.id.in_(entry_ids))
+        .group_by(DatasetEntry.id)
         .all()
     )
-    ds_map: dict[tuple, Dataset] = {}
-    for entry, ds in entries_with_ds:
-        key = (entry.author_channel_id, ds.collection_id)
-        if key not in ds_map:
-            ds_map[key] = ds
+    cc_map = {eid: cc for eid, cc in comment_counts}
 
     items = []
     for c in conflicts:
@@ -107,23 +103,23 @@ def list_conflicts(
         if not ann_a or not ann_b:
             continue
 
-        comment = comment_map.get(c.comment_id)
-        if not comment:
+        entry = entry_map.get(c.dataset_entry_id)
+        if not entry:
             continue
 
-        ds = ds_map.get((comment.author_channel_id, comment.collection_id))
-
+        ds = ds_map.get(entry.dataset_id)
         annotator_a = user_map.get(ann_a.annotator_id)
         annotator_b = user_map.get(ann_b.annotator_id)
 
         items.append(
             {
                 "conflict_id": c.id,
-                "comment_id": c.comment_id,
+                "entry_id": c.dataset_entry_id,
                 "dataset_id": ds.id if ds else None,
                 "dataset_name": ds.name if ds else "",
-                "author_display_name": comment.author_display_name,
-                "text_original": comment.text_original,
+                "author_display_name": entry.author_display_name,
+                "author_channel_id": entry.author_channel_id,
+                "comment_count": cc_map.get(entry.id, 0),
                 "label_a": ann_a.label,
                 "annotator_a": annotator_a.name if annotator_a else "",
                 "justificativa_a": ann_a.justificativa,
@@ -156,22 +152,6 @@ def _empty_page(page: int, page_size: int, total: int = 0) -> dict:
     }
 
 
-def _find_dataset_for_comment(db: Session, comment: Comment):
-    """Encontra o dataset que contém o autor deste comentário."""
-    entry = (
-        db.query(DatasetEntry)
-        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
-        .filter(
-            DatasetEntry.author_channel_id == comment.author_channel_id,
-            Dataset.collection_id == comment.collection_id,
-        )
-        .first()
-    )
-    if not entry:
-        return None
-    return db.query(Dataset).filter(Dataset.id == entry.dataset_id).first()
-
-
 # ─── Detalhe de um conflito ──────────────────────────────────────────────────
 
 
@@ -192,33 +172,22 @@ def get_conflict_detail(db: Session, conflict_id: uuid.UUID) -> dict:
     ann_b = (
         db.query(Annotation).filter(Annotation.id == conflict.annotation_b_id).first()
     )
-    comment = db.query(Comment).filter(Comment.id == conflict.comment_id).first()
+    entry = (
+        db.query(DatasetEntry)
+        .filter(DatasetEntry.id == conflict.dataset_entry_id)
+        .first()
+    )
+    dataset = db.query(Dataset).filter(Dataset.id == entry.dataset_id).first()
 
-    # Find the author's other comments in the same collection
+    # Todos os comentários do autor como evidências
     all_comments = (
         db.query(Comment)
         .filter(
-            Comment.collection_id == comment.collection_id,
-            Comment.author_channel_id == comment.author_channel_id,
+            Comment.collection_id == dataset.collection_id,
+            Comment.author_channel_id == entry.author_channel_id,
         )
         .order_by(Comment.published_at.asc())
         .all()
-    )
-
-    # Find dataset name
-    entry = (
-        db.query(DatasetEntry)
-        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
-        .filter(
-            DatasetEntry.author_channel_id == comment.author_channel_id,
-            Dataset.collection_id == comment.collection_id,
-        )
-        .first()
-    )
-    dataset = (
-        db.query(Dataset).filter(Dataset.id == entry.dataset_id).first()
-        if entry
-        else None
     )
 
     annotator_a = db.query(User).filter(User.id == ann_a.annotator_id).first()
@@ -233,8 +202,8 @@ def get_conflict_detail(db: Session, conflict_id: uuid.UUID) -> dict:
         "conflict_id": conflict.id,
         "status": conflict.status,
         "dataset_name": dataset.name if dataset else "",
-        "author_channel_id": comment.author_channel_id,
-        "author_display_name": comment.author_display_name,
+        "author_channel_id": entry.author_channel_id,
+        "author_display_name": entry.author_display_name,
         "comments": [
             {
                 "comment_db_id": c.id,
@@ -290,13 +259,11 @@ def resolve_conflict(
 
     now = datetime.utcnow()
 
-    # Update conflict record
     conflict.status = "resolved"
     conflict.resolved_by = admin_id
     conflict.resolved_label = resolved_label
     conflict.resolved_at = now
 
-    # Insert immutable resolution record
     resolution = Resolution(
         conflict_id=conflict_id,
         resolved_label=resolved_label,
@@ -324,7 +291,7 @@ def resolve_conflict(
     }
 
 
-# ─── Listar bots ─────────────────────────────────────────────────────────────
+# ─── Listar bots (por usuário) ──────────────────────────────────────────────
 
 
 def list_bots(
@@ -335,27 +302,18 @@ def list_bots(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """Lista comentários com pelo menos uma anotação 'bot'."""
-    bot_comment_ids = (
-        db.query(Annotation.comment_id)
+    """Lista entries (usuários do YouTube) com pelo menos uma anotação 'bot'."""
+    bot_entry_ids = (
+        db.query(Annotation.dataset_entry_id)
         .filter(Annotation.label == "bot")
         .distinct()
         .subquery()
     )
 
-    # Query filtrada com JOINs no SQL
     query = (
-        db.query(Comment)
-        .filter(Comment.id.in_(bot_comment_ids.select()))
-        .join(
-            DatasetEntry,
-            DatasetEntry.author_channel_id == Comment.author_channel_id,
-        )
-        .join(
-            Dataset,
-            (Dataset.id == DatasetEntry.dataset_id)
-            & (Dataset.collection_id == Comment.collection_id),
-        )
+        db.query(DatasetEntry)
+        .filter(DatasetEntry.id.in_(bot_entry_ids.select()))
+        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
     )
 
     if dataset_id:
@@ -367,42 +325,29 @@ def list_bots(
 
     total = query.count()
     offset = (page - 1) * page_size
-    comments = (
-        query.order_by(Comment.published_at.desc())
+    entries = (
+        query.order_by(DatasetEntry.author_display_name)
         .offset(offset)
         .limit(page_size)
         .all()
     )
 
-    if not comments:
+    if not entries:
         return _empty_page(page, page_size, total)
 
-    # Batch load apenas para a página
-    comment_ids = [c.id for c in comments]
-    author_ids = {c.author_channel_id for c in comments}
-    collection_ids = {c.collection_id for c in comments}
+    # Batch load
+    entry_ids = [e.id for e in entries]
+    ds_ids = {e.dataset_id for e in entries}
 
-    entries_with_ds = (
-        db.query(DatasetEntry, Dataset)
-        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
-        .filter(
-            DatasetEntry.author_channel_id.in_(author_ids),
-            Dataset.collection_id.in_(collection_ids),
-        )
-        .all()
-    )
-    ds_map: dict[tuple, Dataset] = {}
-    for entry, ds in entries_with_ds:
-        key = (entry.author_channel_id, ds.collection_id)
-        if key not in ds_map:
-            ds_map[key] = ds
+    datasets = db.query(Dataset).filter(Dataset.id.in_(ds_ids)).all()
+    ds_map = {d.id: d for d in datasets}
 
     all_annotations = (
-        db.query(Annotation).filter(Annotation.comment_id.in_(comment_ids)).all()
+        db.query(Annotation).filter(Annotation.dataset_entry_id.in_(entry_ids)).all()
     )
-    ann_by_comment: dict[uuid.UUID, list[Annotation]] = {}
+    ann_by_entry: dict[uuid.UUID, list[Annotation]] = {}
     for a in all_annotations:
-        ann_by_comment.setdefault(a.comment_id, []).append(a)
+        ann_by_entry.setdefault(a.dataset_entry_id, []).append(a)
 
     user_ids = {a.annotator_id for a in all_annotations}
     users = db.query(User).filter(User.id.in_(user_ids)).all()
@@ -410,35 +355,52 @@ def list_bots(
 
     all_conflicts = (
         db.query(AnnotationConflict)
-        .filter(AnnotationConflict.comment_id.in_(comment_ids))
+        .filter(AnnotationConflict.dataset_entry_id.in_(entry_ids))
         .all()
     )
-    conflict_map = {c.comment_id: c for c in all_conflicts}
+    conflict_map = {c.dataset_entry_id: c for c in all_conflicts}
+
+    # Comment counts
+    comment_counts = (
+        db.query(
+            DatasetEntry.id,
+            func.count(Comment.id).label("cc"),
+        )
+        .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
+        .join(
+            Comment,
+            (Comment.collection_id == Dataset.collection_id)
+            & (Comment.author_channel_id == DatasetEntry.author_channel_id),
+        )
+        .filter(DatasetEntry.id.in_(entry_ids))
+        .group_by(DatasetEntry.id)
+        .all()
+    )
+    cc_map = {eid: cc for eid, cc in comment_counts}
 
     items = []
-    for comment in comments:
-        ds = ds_map.get((comment.author_channel_id, comment.collection_id))
+    for entry in entries:
+        ds = ds_map.get(entry.dataset_id)
+        annotations = ann_by_entry.get(entry.id, [])
+        ann_list = [
+            {
+                "annotator_name": user_map.get(a.annotator_id, User()).name
+                if user_map.get(a.annotator_id)
+                else "",
+                "label": a.label,
+                "justificativa": a.justificativa,
+            }
+            for a in annotations
+        ]
 
-        annotations = ann_by_comment.get(comment.id, [])
-        ann_list = []
-        for a in annotations:
-            annotator = user_map.get(a.annotator_id)
-            ann_list.append(
-                {
-                    "annotator_name": annotator.name if annotator else "",
-                    "label": a.label,
-                    "justificativa": a.justificativa,
-                }
-            )
-
-        conflict = conflict_map.get(comment.id)
+        conflict = conflict_map.get(entry.id)
 
         items.append(
             {
-                "comment_db_id": comment.id,
-                "text_original": comment.text_original,
-                "author_display_name": comment.author_display_name,
-                "author_channel_id": comment.author_channel_id,
+                "entry_id": entry.id,
+                "author_display_name": entry.author_display_name,
+                "author_channel_id": entry.author_channel_id,
+                "comment_count": cc_map.get(entry.id, 0),
                 "dataset_id": ds.id if ds else None,
                 "dataset_name": ds.name if ds else "",
                 "annotations": ann_list,
@@ -473,10 +435,9 @@ def get_stats(db: Session) -> dict:
         .scalar()
     )
 
-    # Total users flagged as bot by at least one annotator
+    # Total de usuários flagados como bot por pelo menos um anotador
     bots_flagged = (
-        db.query(func.count(func.distinct(Comment.author_channel_id)))
-        .join(Annotation, Annotation.comment_id == Comment.id)
+        db.query(func.count(func.distinct(Annotation.dataset_entry_id)))
         .filter(Annotation.label == "bot")
         .scalar()
     )
@@ -497,10 +458,7 @@ def export_review_json(
     dataset_id: uuid.UUID,
 ):
     """Gerador de JSON streaming com dataset final (anotado + desempatado)."""
-    ds_query = db.query(Dataset)
-    if dataset_id:
-        ds_query = ds_query.filter(Dataset.id == dataset_id)
-    dataset = ds_query.first()
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
 
     if not dataset:
         yield '{"error": "Dataset não encontrado."}\n'
@@ -520,82 +478,67 @@ def export_review_json(
     yield f'  "dataset_name": {json.dumps(meta["dataset_name"])},\n'
     yield f'  "video_id": {json.dumps(meta["video_id"])},\n'
     yield f'  "exported_at": {json.dumps(meta["exported_at"])},\n'
-    yield '  "comments": [\n'
+    yield '  "users": [\n'
 
     entries = db.query(DatasetEntry).filter(DatasetEntry.dataset_id == dataset.id).all()
 
-    first_comment = True
+    first_entry = True
     for entry in entries:
-        comments = (
-            db.query(Comment)
-            .filter(
-                Comment.collection_id == dataset.collection_id,
-                Comment.author_channel_id == entry.author_channel_id,
-            )
-            .yield_per(500)
+        # Anotações para este entry (usuário)
+        annotations = (
+            db.query(Annotation).filter(Annotation.dataset_entry_id == entry.id).all()
+        )
+        if not annotations:
+            continue
+
+        # Conflito/resolução
+        conflict = (
+            db.query(AnnotationConflict)
+            .filter(AnnotationConflict.dataset_entry_id == entry.id)
+            .first()
         )
 
-        for comment in comments:
-            # Get all annotations for this comment
-            annotations = (
-                db.query(Annotation).filter(Annotation.comment_id == comment.id).all()
-            )
-            if not annotations:
-                continue
-
-            # Check for conflict/resolution
-            conflict = (
-                db.query(AnnotationConflict)
-                .filter(AnnotationConflict.comment_id == comment.id)
-                .first()
-            )
-
-            # Determine final_label
-            resolution_data = None
-            if conflict and conflict.status == "resolved":
-                resolver = (
-                    db.query(User).filter(User.id == conflict.resolved_by).first()
-                )
-                resolution_data = {
-                    "resolved_by": resolver.name if resolver else "",
-                    "resolved_label": conflict.resolved_label,
-                    "resolved_at": conflict.resolved_at.isoformat() + "Z"
-                    if conflict.resolved_at
-                    else None,
-                }
-                final_label = conflict.resolved_label
-            else:
-                # No conflict or pending — use consensus label
-                labels = {a.label for a in annotations}
-                if len(labels) == 1:
-                    final_label = labels.pop()
-                else:
-                    final_label = "pending"
-
-            ann_list = []
-            for a in annotations:
-                annotator = db.query(User).filter(User.id == a.annotator_id).first()
-                ann_list.append(
-                    {
-                        "annotator": annotator.name if annotator else "",
-                        "label": a.label,
-                        "justificativa": a.justificativa,
-                    }
-                )
-
-            item = {
-                "comment_db_id": str(comment.id),
-                "author_channel_id": comment.author_channel_id,
-                "author_display_name": comment.author_display_name,
-                "text_original": comment.text_original,
-                "final_label": final_label,
-                "annotations": ann_list,
-                "resolution": resolution_data,
+        resolution_data = None
+        if conflict and conflict.status == "resolved":
+            resolver = db.query(User).filter(User.id == conflict.resolved_by).first()
+            resolution_data = {
+                "resolved_by": resolver.name if resolver else "",
+                "resolved_label": conflict.resolved_label,
+                "resolved_at": conflict.resolved_at.isoformat() + "Z"
+                if conflict.resolved_at
+                else None,
             }
+            final_label = conflict.resolved_label
+        else:
+            labels = {a.label for a in annotations}
+            if len(labels) == 1:
+                final_label = labels.pop()
+            else:
+                final_label = "pending"
 
-            prefix = "    " if first_comment else ",\n    "
-            first_comment = False
-            yield prefix + json.dumps(item, ensure_ascii=False)
+        ann_list = []
+        for a in annotations:
+            annotator = db.query(User).filter(User.id == a.annotator_id).first()
+            ann_list.append(
+                {
+                    "annotator": annotator.name if annotator else "",
+                    "label": a.label,
+                    "justificativa": a.justificativa,
+                }
+            )
+
+        item = {
+            "entry_id": str(entry.id),
+            "author_channel_id": entry.author_channel_id,
+            "author_display_name": entry.author_display_name,
+            "final_label": final_label,
+            "annotations": ann_list,
+            "resolution": resolution_data,
+        }
+
+        prefix = "    " if first_entry else ",\n    "
+        first_entry = False
+        yield prefix + json.dumps(item, ensure_ascii=False)
 
     yield "\n  ]\n}\n"
 
@@ -611,82 +554,66 @@ def export_review_csv(
     import csv
     import io
 
-    ds_query = db.query(Dataset)
-    if dataset_id:
-        ds_query = ds_query.filter(Dataset.id == dataset_id)
-    dataset = ds_query.first()
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
 
     if not dataset:
         yield "error\nDataset não encontrado.\n"
         return
 
-    header = "comment_db_id,author_channel_id,author_display_name,"
-    header += "text_original,final_label\n"
-    yield header
+    yield "entry_id,author_channel_id,author_display_name,final_label\n"
 
     entries = db.query(DatasetEntry).filter(DatasetEntry.dataset_id == dataset.id).all()
 
     for entry in entries:
-        comments = (
-            db.query(Comment)
-            .filter(
-                Comment.collection_id == dataset.collection_id,
-                Comment.author_channel_id == entry.author_channel_id,
-            )
-            .yield_per(500)
+        annotations = (
+            db.query(Annotation).filter(Annotation.dataset_entry_id == entry.id).all()
+        )
+        if not annotations:
+            continue
+
+        conflict = (
+            db.query(AnnotationConflict)
+            .filter(AnnotationConflict.dataset_entry_id == entry.id)
+            .first()
         )
 
-        for comment in comments:
-            annotations = (
-                db.query(Annotation).filter(Annotation.comment_id == comment.id).all()
-            )
-            if not annotations:
-                continue
+        if conflict and conflict.status == "resolved":
+            final_label = conflict.resolved_label
+        else:
+            labels = {a.label for a in annotations}
+            final_label = labels.pop() if len(labels) == 1 else "pending"
 
-            conflict = (
-                db.query(AnnotationConflict)
-                .filter(AnnotationConflict.comment_id == comment.id)
-                .first()
-            )
-
-            if conflict and conflict.status == "resolved":
-                final_label = conflict.resolved_label
-            else:
-                labels = {a.label for a in annotations}
-                final_label = labels.pop() if len(labels) == 1 else "pending"
-
-            buf = io.StringIO()
-            writer = csv.writer(buf)
-            writer.writerow(
-                [
-                    str(comment.id),
-                    comment.author_channel_id,
-                    comment.author_display_name,
-                    comment.text_original,
-                    final_label,
-                ]
-            )
-            yield buf.getvalue()
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(
+            [
+                str(entry.id),
+                entry.author_channel_id,
+                entry.author_display_name,
+                final_label,
+            ]
+        )
+        yield buf.getvalue()
 
 
 # ─── Import (lógica interna) ─────────────────────────────────────────────────
 
 
-def _resolve_comments(
+def _resolve_users(
     db: Session,
     admin_id: uuid.UUID,
-    comments: list,
+    users: list,
 ) -> dict:
-    """Resolve conflitos a partir de uma lista de comentários importados."""
+    """Resolve conflitos a partir de uma lista de usuários importados."""
     imported = 0
     skipped = 0
     errors = []
 
-    for item in comments:
-        comment = db.query(Comment).filter(Comment.id == item.comment_db_id).first()
-        if not comment:
+    for item in users:
+        entry = db.query(DatasetEntry).filter(DatasetEntry.id == item.entry_id).first()
+        if not entry:
             skipped += 1
-            errors.append(f"Comentário {item.comment_db_id} não encontrado.")
+            errors.append(f"Entrada {item.entry_id} não encontrada.")
             continue
 
         if not item.resolution:
@@ -695,14 +622,12 @@ def _resolve_comments(
 
         conflict = (
             db.query(AnnotationConflict)
-            .filter(AnnotationConflict.comment_id == comment.id)
+            .filter(AnnotationConflict.dataset_entry_id == entry.id)
             .first()
         )
         if not conflict:
             skipped += 1
-            errors.append(
-                f"Comentário {item.comment_db_id} não possui conflito registrado."
-            )
+            errors.append(f"Entrada {item.entry_id} não possui conflito registrado.")
             continue
 
         if conflict.status == "resolved":
@@ -713,7 +638,7 @@ def _resolve_comments(
         if resolved_label not in ("bot", "humano"):
             skipped += 1
             errors.append(
-                f"Comentário {item.comment_db_id}: label '{resolved_label}' inválido."
+                f"Entrada {item.entry_id}: label '{resolved_label}' inválido."
             )
             continue
 
@@ -754,7 +679,7 @@ def import_review(
     db: Session,
     admin_id: uuid.UUID,
     video_id: str,
-    comments: list,
+    users: list,
 ) -> dict:
     """Importa dataset revisado (formato simétrico ao export)."""
     collection = db.query(Collection).filter(Collection.video_id == video_id).first()
@@ -764,19 +689,19 @@ def import_review(
             detail=f"Coleta com video_id '{video_id}' não encontrada.",
         )
 
-    return _resolve_comments(db, admin_id, comments)
+    return _resolve_users(db, admin_id, users)
 
 
 def import_review_chunk(
     db: Session,
     admin_id: uuid.UUID,
-    comments: list,
+    users: list,
     done: bool,
 ) -> dict:
-    """Batch adicional de comentários revisados para import paginado."""
-    result = _resolve_comments(db, admin_id, comments)
+    """Batch adicional de usuários revisados para import paginado."""
+    result = _resolve_users(db, admin_id, users)
     return {
         "total_imported": result["imported"],
-        "chunk_received": len(comments),
+        "chunk_received": len(users),
         "done": done,
     }

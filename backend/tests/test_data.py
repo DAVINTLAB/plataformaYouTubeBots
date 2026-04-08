@@ -56,6 +56,7 @@ def _make_dataset(db, collection_id, user_id, author_channel_ids):
     )
     db.add(ds)
     db.flush()
+    entries = []
     for channel_id in author_channel_ids:
         entry = DatasetEntry(
             dataset_id=ds.id,
@@ -65,8 +66,9 @@ def _make_dataset(db, collection_id, user_id, author_channel_ids):
             matched_criteria=["percentil"],
         )
         db.add(entry)
+        entries.append(entry)
     db.flush()
-    return ds
+    return ds, entries
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +185,7 @@ class TestDatasets:
         col = _make_collection(db, auth_as_user.id, video_id="vid_ds")
         _make_comments(db, col.id, "ch1", count=4)
         _make_comments(db, col.id, "ch2", count=3)
-        ds = _make_dataset(db, col.id, auth_as_user.id, ["ch1", "ch2"])
+        ds, _ = _make_dataset(db, col.id, auth_as_user.id, ["ch1", "ch2"])
         db.commit()
 
         resp = client.get("/data/datasets")
@@ -221,37 +223,29 @@ class TestAnnotations:
     def test_annotations_progresso_com_conflito_pendente(
         self, client, db, auth_as_user, admin_user
     ):
-        """Dataset com conflito pendente: bots_comments=0 (sem rótulo final)."""
+        """Dataset com conflito pendente: bots=0 (sem rótulo final)."""
         col = _make_collection(db, auth_as_user.id)
-        comments = _make_comments(db, col.id, "ch_ann", count=3)
-        ds = _make_dataset(db, col.id, auth_as_user.id, ["ch_ann"])
+        _make_comments(db, col.id, "ch_ann", count=3)
+        ds, entries = _make_dataset(db, col.id, auth_as_user.id, ["ch_ann"])
+        entry = entries[0]
 
-        # Anotar 2 dos 3 comentários
+        # Anotações divergentes → conflito pendente
         ann1 = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotator_id=auth_as_user.id,
             label="bot",
             justificativa="teste",
         )
-        ann2 = Annotation(
-            comment_id=comments[1].id,
-            annotator_id=auth_as_user.id,
-            label="humano",
-        )
-        db.add_all([ann1, ann2])
-        db.flush()
-
-        # Conflito pendente no primeiro comentário
         ann1_admin = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotator_id=admin_user.id,
             label="humano",
         )
-        db.add(ann1_admin)
+        db.add_all([ann1, ann1_admin])
         db.flush()
 
         conflict = AnnotationConflict(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotation_a_id=ann1.id,
             annotation_b_id=ann1_admin.id,
             status="pending",
@@ -265,26 +259,24 @@ class TestAnnotations:
         assert len(data) == 1
         progress = data[0]
         assert progress["dataset_id"] == str(ds.id)
-        assert progress["total"] == 3
-        assert progress["annotated"] == 2
-        assert progress["pending"] == 1
+        assert progress["total_users"] == 1
+        assert progress["annotated_users"] == 1
+        assert progress["pending_users"] == 0
         assert progress["conflicts"] == 1
         assert progress["conflicts_resolved"] == 0
         assert progress["annotators_count"] == 2
-        # Conflito pendente → sem rótulo final de bot
-        assert progress["bots_comments"] == 0
-        assert progress["bots_users"] == 0
+        assert progress["bots"] == 0
 
     def test_bots_por_consenso(self, client, db, auth_as_user, admin_user):
-        """Dois anotadores concordam como bot → bots_comments=1, bots_users=1."""
+        """Dois anotadores concordam como bot → bots=1."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_bot_cons")
-        comments = _make_comments(db, col.id, "ch_bot", count=2)
-        _make_dataset(db, col.id, auth_as_user.id, ["ch_bot"])
+        _make_comments(db, col.id, "ch_bot", count=2)
+        ds, entries = _make_dataset(db, col.id, auth_as_user.id, ["ch_bot"])
+        entry = entries[0]
 
-        # Ambos anotam comment[0] como bot (consenso)
         db.add(
             Annotation(
-                comment_id=comments[0].id,
+                dataset_entry_id=entry.id,
                 annotator_id=auth_as_user.id,
                 label="bot",
                 justificativa="padrão",
@@ -292,18 +284,10 @@ class TestAnnotations:
         )
         db.add(
             Annotation(
-                comment_id=comments[0].id,
+                dataset_entry_id=entry.id,
                 annotator_id=admin_user.id,
                 label="bot",
                 justificativa="concordo",
-            )
-        )
-        # Comment[1] anotado como humano
-        db.add(
-            Annotation(
-                comment_id=comments[1].id,
-                annotator_id=auth_as_user.id,
-                label="humano",
             )
         )
         db.commit()
@@ -312,35 +296,33 @@ class TestAnnotations:
         data = resp.json()
         assert len(data) == 1
         progress = data[0]
-        assert progress["bots_comments"] == 1
-        assert progress["bots_users"] == 1
-        assert progress["annotated"] == 2
+        assert progress["bots"] == 1
+        assert progress["annotated_users"] == 1
         assert progress["conflicts"] == 0
 
     def test_bots_por_conflito_resolvido(self, client, db, auth_as_user, admin_user):
-        """Conflito resolvido como bot → conta em bots_comments e bots_users."""
+        """Conflito resolvido como bot → conta em bots."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_bot_res")
-        comments = _make_comments(db, col.id, "ch_resolved", count=1)
-        _make_dataset(db, col.id, auth_as_user.id, ["ch_resolved"])
+        _make_comments(db, col.id, "ch_resolved", count=1)
+        ds, entries = _make_dataset(db, col.id, auth_as_user.id, ["ch_resolved"])
+        entry = entries[0]
 
-        # Anotações divergentes
         ann_a = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotator_id=auth_as_user.id,
             label="bot",
             justificativa="spam",
         )
         ann_b = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotator_id=admin_user.id,
             label="humano",
         )
         db.add_all([ann_a, ann_b])
         db.flush()
 
-        # Conflito resolvido como bot
         conflict = AnnotationConflict(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotation_a_id=ann_a.id,
             annotation_b_id=ann_b.id,
             status="resolved",
@@ -355,27 +337,27 @@ class TestAnnotations:
         data = resp.json()
         assert len(data) == 1
         progress = data[0]
-        assert progress["bots_comments"] == 1
-        assert progress["bots_users"] == 1
+        assert progress["bots"] == 1
         assert progress["conflicts"] == 1
         assert progress["conflicts_resolved"] == 1
 
     def test_conflito_resolvido_como_humano_nao_conta_bot(
         self, client, db, auth_as_user, admin_user
     ):
-        """Conflito resolvido como humano → bots_comments=0."""
+        """Conflito resolvido como humano → bots=0."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_hum_res")
-        comments = _make_comments(db, col.id, "ch_hum", count=1)
-        _make_dataset(db, col.id, auth_as_user.id, ["ch_hum"])
+        _make_comments(db, col.id, "ch_hum", count=1)
+        ds, entries = _make_dataset(db, col.id, auth_as_user.id, ["ch_hum"])
+        entry = entries[0]
 
         ann_a = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotator_id=auth_as_user.id,
             label="bot",
             justificativa="parece bot",
         )
         ann_b = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotator_id=admin_user.id,
             label="humano",
         )
@@ -383,7 +365,7 @@ class TestAnnotations:
         db.flush()
 
         conflict = AnnotationConflict(
-            comment_id=comments[0].id,
+            dataset_entry_id=entry.id,
             annotation_a_id=ann_a.id,
             annotation_b_id=ann_b.id,
             status="resolved",
@@ -397,13 +379,11 @@ class TestAnnotations:
         resp = client.get("/data/annotations")
         data = resp.json()
         progress = data[0]
-        assert progress["bots_comments"] == 0
-        assert progress["bots_users"] == 0
+        assert progress["bots"] == 0
 
     def test_dataset_sem_entries_retorna_zeros(self, client, db, auth_as_user):
         """Dataset vazio (sem entries) retorna todos os contadores zerados."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_empty")
-        # Dataset sem entries
         ds = Dataset(
             name=f"empty_{uuid.uuid4().hex[:6]}",
             collection_id=col.id,
@@ -420,9 +400,9 @@ class TestAnnotations:
         data = resp.json()
         assert len(data) == 1
         progress = data[0]
-        assert progress["total"] == 0
-        assert progress["annotated"] == 0
-        assert progress["bots_comments"] == 0
+        assert progress["total_users"] == 0
+        assert progress["annotated_users"] == 0
+        assert progress["bots"] == 0
         assert progress["annotators_count"] == 0
 
 
@@ -479,4 +459,5 @@ class TestEmptyColAuthorsSkip:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
-        assert data[0]["total"] == 0
+        assert data[0]["total_users"] == 1
+        assert data[0]["annotated_users"] == 0

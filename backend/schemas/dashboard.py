@@ -9,8 +9,8 @@ from pydantic import BaseModel
 
 class GlobalSummary(BaseModel):
     total_datasets: int
-    total_comments_annotated: int
-    total_comments_in_datasets: int
+    total_users_annotated: int
+    total_users_in_datasets: int
     annotation_progress: float
     total_bots: int
     total_humans: int
@@ -37,7 +37,7 @@ class CriteriaEffectivenessItem(BaseModel):
     criteria: str
     group: str
     total_datasets: int
-    total_comments_selected: int
+    total_users_selected: int
     total_bots: int
     bot_rate: float
 
@@ -47,7 +47,7 @@ class CriteriaEffectivenessItem(BaseModel):
 
 class VideoSummary(BaseModel):
     total_comments_collected: int
-    total_comments_in_datasets: int
+    total_users_in_datasets: int
     total_annotated: int
     total_bots: int
     total_humans: int
@@ -91,7 +91,7 @@ class UserDatasetProgress(BaseModel):
     dataset_id: uuid.UUID
     dataset_name: str
     video_id: str
-    total_comments: int
+    total_users: int
     annotated_by_me: int
     pending: int
     percent_complete: float
@@ -111,16 +111,17 @@ class UserDashboardResponse(BaseModel):
 # ── Tabela de Bots ─────────────────────────────────────────────────
 
 
-class BotCommentItem(BaseModel):
+class BotUserItem(BaseModel):
     dataset_name: str
     author_display_name: str
-    text_original: str
+    author_channel_id: str
+    comment_count: int
     concordance_pct: int
     conflict_status: str | None = None
     annotators_count: int = 0
     criteria: list[str] = []
 
 
-class BotCommentsResponse(BaseModel):
+class BotUsersResponse(BaseModel):
     total: int
-    items: list[BotCommentItem]
+    items: list[BotUserItem]

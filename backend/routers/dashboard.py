@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.user import User
 from schemas.dashboard import (
-    BotCommentsResponse,
+    BotUsersResponse,
     CriteriaEffectivenessItem,
     GlobalDashboardResponse,
     UserDashboardResponse,
@@ -14,7 +14,7 @@ from schemas.dashboard import (
 )
 from services.auth import get_current_user
 from services.dashboard import (
-    get_bot_comments,
+    get_bot_users,
     get_criteria_effectiveness,
     get_global_dashboard,
     get_user_dashboard,
@@ -69,7 +69,7 @@ def user_endpoint(
     return get_user_dashboard(db, user_id=current_user.id)
 
 
-@router.get("/bots", response_model=BotCommentsResponse)
+@router.get("/bots", response_model=BotUsersResponse)
 def bots_endpoint(
     dataset_id: str | None = Query(default=None),
     video_id: str | None = Query(default=None),
@@ -84,7 +84,7 @@ def bots_endpoint(
     criteria_list = (
         [c.strip() for c in criteria.split(",") if c.strip()] if criteria else None
     )
-    return get_bot_comments(
+    return get_bot_users(
         db,
         dataset_id=dataset_id,
         video_id=video_id,
