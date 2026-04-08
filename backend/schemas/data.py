@@ -47,11 +47,10 @@ class DataDataset(BaseModel):
 class DataAnnotationProgress(BaseModel):
     dataset_id: uuid.UUID
     dataset_name: str
-    total: int
-    annotated: int
-    pending: int
+    total_users: int
+    annotated_users: int
+    pending_users: int
     conflicts: int
     conflicts_resolved: int
     annotators_count: int
-    bots_users: int
-    bots_comments: int
+    bots: int

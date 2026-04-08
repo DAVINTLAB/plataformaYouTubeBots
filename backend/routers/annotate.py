@@ -73,7 +73,7 @@ def get_comments_endpoint(
     )
 
 
-# ─── Anotar comentário ──────────────────────────────────────────────────────
+# ─── Anotar usuário (entry) ───────────────────────────────────────────────
 
 
 @router.post("", response_model=AnnotationResult)
@@ -91,7 +91,7 @@ def annotate_endpoint(
 
     result = upsert_annotation(
         db,
-        payload.comment_db_id,
+        payload.entry_id,
         current_user.id,
         payload.label,
         payload.justificativa,

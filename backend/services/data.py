@@ -198,10 +198,9 @@ def list_all_datasets(db: Session) -> list[dict]:
 
 
 def get_annotation_progress(db: Session) -> list[dict]:
-    """Progresso de anotação por dataset.
+    """Progresso de anotação por dataset (unidade: entry/usuário).
 
-    Otimizado: número constante de queries independente do número de datasets
-    e comentários. Sem loops N+1.
+    Otimizado: número constante de queries independente do número de datasets.
     """
     datasets = db.query(Dataset).order_by(Dataset.created_at.desc()).all()
 
@@ -210,172 +209,104 @@ def get_annotation_progress(db: Session) -> list[dict]:
 
     ds_ids = [ds.id for ds in datasets]
 
-    # 1) Batch: entries → authors por dataset
+    # 1) Batch: entries por dataset
     all_entries = (
-        db.query(DatasetEntry.dataset_id, DatasetEntry.author_channel_id)
+        db.query(DatasetEntry.dataset_id, DatasetEntry.id)
         .filter(DatasetEntry.dataset_id.in_(ds_ids))
         .all()
     )
-    authors_by_ds: dict[uuid.UUID, list[str]] = defaultdict(list)
-    for dataset_id, author_channel_id in all_entries:
-        authors_by_ds[dataset_id].append(author_channel_id)
+    entries_by_ds: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
+    for dataset_id, entry_id in all_entries:
+        entries_by_ds[dataset_id].append(entry_id)
 
-    # 2) Batch: todos os comentários relevantes (id, collection_id, author_channel_id)
-    #    Monta pares (collection_id, [author_ids]) para buscar de uma vez
-    col_authors: dict[uuid.UUID, set[str]] = defaultdict(set)
-    ds_col_map = {ds.id: ds.collection_id for ds in datasets}
-    for ds in datasets:
-        for author_id in authors_by_ds.get(ds.id, []):
-            col_authors[ds.collection_id].add(author_id)
+    all_entry_ids = [eid for eids in entries_by_ds.values() for eid in eids]
 
-    # Buscar todos os comentários necessários em batch por collection
-    # comment_id → (collection_id, author_channel_id)
-    comment_info: dict[uuid.UUID, tuple[uuid.UUID, str]] = {}
-    # (collection_id, author_channel_id) → [comment_ids]
-    comments_by_col_author: dict[tuple[uuid.UUID, str], list[uuid.UUID]] = defaultdict(
-        list
-    )
-
-    for col_id, author_set in col_authors.items():
-        if not author_set:
-            continue
-        rows = (
-            db.query(Comment.id, Comment.collection_id, Comment.author_channel_id)
-            .filter(
-                Comment.collection_id == col_id,
-                Comment.author_channel_id.in_(list(author_set)),
-            )
-            .all()
-        )
-        for cid, c_col_id, c_author_id in rows:
-            comment_info[cid] = (c_col_id, c_author_id)
-            comments_by_col_author[(c_col_id, c_author_id)].append(cid)
-
-    # Coletar todos os comment_ids relevantes
-    all_comment_ids = list(comment_info.keys())
-
-    # 3) Batch: anotações (comment_id, annotator_id, label)
-    all_annotations: list[tuple[uuid.UUID, uuid.UUID, str]] = []
-    if all_comment_ids:
+    # 2) Batch: anotações (entry_id, annotator_id, label)
+    anns_by_entry: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = defaultdict(list)
+    if all_entry_ids:
         all_annotations = (
             db.query(
-                Annotation.comment_id,
+                Annotation.dataset_entry_id,
                 Annotation.annotator_id,
                 Annotation.label,
             )
-            .filter(Annotation.comment_id.in_(all_comment_ids))
+            .filter(Annotation.dataset_entry_id.in_(all_entry_ids))
             .all()
         )
+        for entry_id, annotator_id, label in all_annotations:
+            anns_by_entry[entry_id].append((annotator_id, label))
 
-    # Agrupar: comment_id → [(annotator_id, label)]
-    anns_by_comment: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = defaultdict(list)
-    for comment_id, annotator_id, label in all_annotations:
-        anns_by_comment[comment_id].append((annotator_id, label))
-
-    # 4) Batch: conflitos (comment_id, status, resolved_label)
-    all_conflicts: list[tuple[uuid.UUID, str, str | None]] = []
-    if all_comment_ids:
+    # 3) Batch: conflitos (entry_id, status, resolved_label)
+    conflict_map: dict[uuid.UUID, tuple[str, str | None]] = {}
+    if all_entry_ids:
         all_conflicts = (
             db.query(
-                AnnotationConflict.comment_id,
+                AnnotationConflict.dataset_entry_id,
                 AnnotationConflict.status,
                 AnnotationConflict.resolved_label,
             )
-            .filter(AnnotationConflict.comment_id.in_(all_comment_ids))
+            .filter(AnnotationConflict.dataset_entry_id.in_(all_entry_ids))
             .all()
         )
+        for entry_id, conflict_status, resolved_label in all_conflicts:
+            conflict_map[entry_id] = (conflict_status, resolved_label)
 
-    # conflict_comment_id → (status, resolved_label)
-    conflict_map: dict[uuid.UUID, tuple[str, str | None]] = {}
-    for comment_id, status, resolved_label in all_conflicts:
-        conflict_map[comment_id] = (status, resolved_label)
-
-    # 5) Montar resultados por dataset — tudo em Python, sem mais queries
+    # 4) Montar resultados por dataset
     results = []
     for ds in datasets:
-        ds_authors = authors_by_ds.get(ds.id, [])
+        ds_eids = entries_by_ds.get(ds.id, [])
+        total_users = len(ds_eids)
 
-        if not ds_authors:
+        if not ds_eids:
             results.append(
                 {
                     "dataset_id": ds.id,
                     "dataset_name": ds.name,
-                    "total": 0,
-                    "annotated": 0,
-                    "pending": 0,
+                    "total_users": 0,
+                    "annotated_users": 0,
+                    "pending_users": 0,
                     "conflicts": 0,
                     "conflicts_resolved": 0,
                     "annotators_count": 0,
-                    "bots_users": 0,
-                    "bots_comments": 0,
+                    "bots": 0,
                 }
             )
             continue
 
-        # Comentários deste dataset
-        ds_comment_ids: list[uuid.UUID] = []
-        for author_id in ds_authors:
-            ds_comment_ids.extend(
-                comments_by_col_author.get((ds_col_map[ds.id], author_id), [])
-            )
-
-        total = len(ds_comment_ids)
-
-        # Anotados: comentários com pelo menos uma anotação
-        annotated_set: set[uuid.UUID] = set()
+        annotated_users = 0
         annotator_ids: set[uuid.UUID] = set()
-        for cid in ds_comment_ids:
-            anns = anns_by_comment.get(cid)
+        conflicts = 0
+        conflicts_resolved = 0
+        bots = 0
+
+        for eid in ds_eids:
+            anns = anns_by_entry.get(eid, [])
             if anns:
-                annotated_set.add(cid)
+                annotated_users += 1
                 for annotator_id, _ in anns:
                     annotator_ids.add(annotator_id)
 
-        annotated = len(annotated_set)
-
-        # Conflitos
-        conflicts = 0
-        conflicts_resolved = 0
-        for cid in ds_comment_ids:
-            if cid in conflict_map:
+            if eid in conflict_map:
                 conflicts += 1
-                if conflict_map[cid][0] == "resolved":
+                c_status, c_resolved = conflict_map[eid]
+                if c_status == "resolved":
                     conflicts_resolved += 1
-
-        # Bots: consenso "bot" (sem conflito) OU conflito resolvido como "bot"
-        bots_comments = 0
-        bot_author_ids: set[str] = set()
-        for cid in ds_comment_ids:
-            anns = anns_by_comment.get(cid, [])
-            if not anns:
-                continue
-
-            if cid in conflict_map:
-                # Tem conflito — só conta se resolvido como bot
-                status, resolved_label = conflict_map[cid]
-                if status == "resolved" and resolved_label == "bot":
-                    bots_comments += 1
-                    _, author_id = comment_info[cid]
-                    bot_author_ids.add(author_id)
-            else:
-                # Sem conflito — consenso
-                if all(label == "bot" for _, label in anns):
-                    bots_comments += 1
-                    _, author_id = comment_info[cid]
-                    bot_author_ids.add(author_id)
+                    if c_resolved == "bot":
+                        bots += 1
+            elif anns and all(label == "bot" for _, label in anns):
+                bots += 1
 
         results.append(
             {
                 "dataset_id": ds.id,
                 "dataset_name": ds.name,
-                "total": total,
-                "annotated": annotated,
-                "pending": total - annotated,
+                "total_users": total_users,
+                "annotated_users": annotated_users,
+                "pending_users": total_users - annotated_users,
                 "conflicts": conflicts,
                 "conflicts_resolved": conflicts_resolved,
                 "annotators_count": len(annotator_ids),
-                "bots_users": len(bot_author_ids),
-                "bots_comments": bots_comments,
+                "bots": bots,
             }
         )
 

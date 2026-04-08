@@ -146,16 +146,18 @@ def delete_seed(db: Session) -> dict:
             detail="Nenhum dado mockado encontrado.",
         )
 
-    # Deletar anotações e conflitos dos comentários desta coleta
-    comment_ids = (
-        db.query(Comment.id).filter(Comment.collection_id == collection.id).subquery()
+    # Deletar anotações e conflitos dos entries desta coleta
+    datasets = db.query(Dataset).filter(Dataset.collection_id == collection.id).all()
+    ds_ids = [ds.id for ds in datasets]
+    entry_ids = (
+        db.query(DatasetEntry.id).filter(DatasetEntry.dataset_id.in_(ds_ids)).subquery()
     )
 
     db.query(AnnotationConflict).filter(
-        AnnotationConflict.comment_id.in_(comment_ids)
+        AnnotationConflict.dataset_entry_id.in_(entry_ids)
     ).delete(synchronize_session=False)
 
-    db.query(Annotation).filter(Annotation.comment_id.in_(comment_ids)).delete(
+    db.query(Annotation).filter(Annotation.dataset_entry_id.in_(entry_ids)).delete(
         synchronize_session=False
     )
 
@@ -360,38 +362,37 @@ def run_seed(db: Session) -> dict:
         db.flush()
 
     # ─── Anotações pré-existentes ────────────────────────────────────────
-    # Pegar todos os comentários dos bots no dataset
+    # Anotar por entry (usuário), não por comentário
     bot_channel_ids = [cid for cid, _, _ in BOTS]
-    all_bot_comments = (
-        db.query(Comment)
+    bot_entries = (
+        db.query(DatasetEntry)
         .filter(
-            Comment.collection_id == col.id,
-            Comment.author_channel_id.in_(bot_channel_ids),
+            DatasetEntry.dataset_id == ds.id,
+            DatasetEntry.author_channel_id.in_(bot_channel_ids),
         )
-        .order_by(Comment.published_at)
+        .order_by(DatasetEntry.author_display_name)
         .all()
     )
 
     annotations_created = 0
     conflicts_created = 0
 
-    for idx, comment in enumerate(all_bot_comments):
+    for idx, entry in enumerate(bot_entries):
         # Primeiros 40%: ambos concordam → bot (sem conflito)
         # Próximos 20%: ambos concordam → humano (sem conflito)
         # Próximos 20%: divergem → conflito (A=bot, B=humano)
         # Últimos 20%: sem anotação (pendentes)
-        ratio = idx / len(all_bot_comments)
+        ratio = idx / len(bot_entries)
 
         if ratio < 0.4:
-            # Concordância: ambos dizem bot
             ann_a = Annotation(
-                comment_id=comment.id,
+                dataset_entry_id=entry.id,
                 annotator_id=user_a.id,
                 label="bot",
                 justificativa="Texto de spam/promoção.",
             )
             ann_b = Annotation(
-                comment_id=comment.id,
+                dataset_entry_id=entry.id,
                 annotator_id=user_b.id,
                 label="bot",
                 justificativa="Comentário promocional repetido.",
@@ -401,14 +402,13 @@ def run_seed(db: Session) -> dict:
             annotations_created += 2
 
         elif ratio < 0.6:
-            # Concordância: ambos dizem humano
             ann_a = Annotation(
-                comment_id=comment.id,
+                dataset_entry_id=entry.id,
                 annotator_id=user_a.id,
                 label="humano",
             )
             ann_b = Annotation(
-                comment_id=comment.id,
+                dataset_entry_id=entry.id,
                 annotator_id=user_b.id,
                 label="humano",
             )
@@ -417,9 +417,8 @@ def run_seed(db: Session) -> dict:
             annotations_created += 2
 
         elif ratio < 0.8:
-            # Divergência → conflito
             ann_a = Annotation(
-                comment_id=comment.id,
+                dataset_entry_id=entry.id,
                 annotator_id=user_a.id,
                 label="bot",
                 justificativa="Padrão de engajamento falso.",
@@ -428,7 +427,7 @@ def run_seed(db: Session) -> dict:
             db.flush()
 
             ann_b = Annotation(
-                comment_id=comment.id,
+                dataset_entry_id=entry.id,
                 annotator_id=user_b.id,
                 label="humano",
             )
@@ -436,7 +435,7 @@ def run_seed(db: Session) -> dict:
             db.flush()
 
             conflict = AnnotationConflict(
-                comment_id=comment.id,
+                dataset_entry_id=entry.id,
                 annotation_a_id=ann_a.id,
                 annotation_b_id=ann_b.id,
                 status="pending",

@@ -3,7 +3,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { StepsCard } from "../../components/StepsCard";
 import { useAuthContext } from "../../contexts/AuthContext";
 import { useReview } from "../../hooks/useReview";
-import type { ConflictDetail, ConflictListItem, BotCommentItem } from "../../api/review";
+import type { ConflictDetail, ConflictListItem, BotUserItem } from "../../api/review";
 
 type Tab = "conflicts" | "bots" | "import";
 
@@ -41,7 +41,7 @@ export function ReviewPage() {
   } | null>(null);
   const [conflictsPage, setConflictsPage] = useState(1);
   const [botsPage, setBotsPage] = useState(1);
-  const [selectedBot, setSelectedBot] = useState<BotCommentItem | null>(null);
+  const [selectedBot, setSelectedBot] = useState<BotUserItem | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importParseError, setImportParseError] = useState<string | null>(null);
 
@@ -120,8 +120,8 @@ export function ReviewPage() {
       try {
         const text = await importFile.text();
         const parsed = JSON.parse(text);
-        if (!parsed.video_id || !parsed.comments) {
-          setImportParseError('JSON deve conter "video_id", "dataset_name" e "comments".');
+        if (!parsed.video_id || !parsed.users) {
+          setImportParseError('JSON deve conter "video_id", "dataset_name" e "users".');
           return;
         }
         await importReview(parsed);
@@ -427,10 +427,6 @@ function ConflictStatusBadge({ status }: { status: string }) {
   );
 }
 
-function Truncate({ text, max = 80 }: { text: string; max?: number }) {
-  return <>{text.length > max ? text.slice(0, max) + "…" : text}</>;
-}
-
 // ─── Conflicts Tab ──────────────────────────────────────────────────────────
 
 function ConflictsTab({
@@ -467,10 +463,10 @@ function ConflictsTab({
           <thead>
             <tr className="border-b border-gray-100">
               <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                Comentário
+                Usuário
               </th>
               <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                Autor
+                Comentários
               </th>
               <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
                 Dataset
@@ -488,12 +484,10 @@ function ConflictsTab({
                 className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
                 onClick={() => onSelectConflict(c.conflict_id)}
               >
-                <td className="px-4 py-3 text-gray-700 max-w-[280px]">
-                  <Truncate text={c.text_original} max={80} />
-                </td>
                 <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                   {c.author_display_name}
                 </td>
+                <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{c.comment_count}</td>
                 <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
                   {c.dataset_name}
                 </td>
@@ -527,18 +521,18 @@ function BotsTab({
   onPageChange,
   onSelectBot,
 }: {
-  bots: BotCommentItem[];
+  bots: BotUserItem[];
   loading: boolean;
   page: number;
   totalPages: number;
   total: number;
   onPageChange: (p: number) => void;
-  onSelectBot: (bot: BotCommentItem) => void;
+  onSelectBot: (bot: BotUserItem) => void;
 }) {
   if (bots.length === 0 && !loading) {
     return (
       <p className="text-sm text-gray-500">
-        Nenhum comentário classificado como bot com os filtros selecionados.
+        Nenhum usuário classificado como bot com os filtros selecionados.
       </p>
     );
   }
@@ -552,10 +546,10 @@ function BotsTab({
           <thead>
             <tr className="border-b border-gray-100">
               <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                Comentário
+                Usuário
               </th>
               <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                Autor
+                Comentários
               </th>
               <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
                 Dataset
@@ -571,13 +565,11 @@ function BotsTab({
               const botCount = b.annotations.filter((a) => a.label === "bot").length;
               const humanCount = b.annotations.filter((a) => a.label === "humano").length;
               return (
-                <tr key={b.comment_db_id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-700 max-w-[280px]">
-                    <Truncate text={b.text_original} max={80} />
-                  </td>
+                <tr key={b.entry_id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                     {b.author_display_name}
                   </td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{b.comment_count}</td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
                     {b.dataset_name}
                   </td>
@@ -751,11 +743,6 @@ function ConflictModal({
 }) {
   const isPending = detail.status === "pending";
 
-  // The comment that triggered the conflict (first in the list)
-  const conflictComment = detail.comments[0];
-  // Other comments from the same author (context)
-  const otherComments = detail.comments.slice(1);
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
@@ -768,7 +755,7 @@ function ConflictModal({
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-bold text-gray-800">Desempate de comentário</h2>
+            <h2 className="text-lg font-bold text-gray-800">Desempate de usuário</h2>
             <p className="text-xs text-gray-500">
               {detail.dataset_name} &middot; {detail.author_display_name}
             </p>
@@ -789,25 +776,6 @@ function ConflictModal({
             </button>
           </div>
         </div>
-
-        {/* The comment in conflict */}
-        {conflictComment && (
-          <div className="p-5 border-b border-gray-100">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">
-              Comentário em conflito
-            </h3>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                {conflictComment.text_original}
-              </p>
-              <div className="flex gap-3 mt-2 text-[11px] text-gray-400">
-                <span>{new Date(conflictComment.published_at).toLocaleDateString("pt-BR")}</span>
-                <span>{conflictComment.like_count} curtidas</span>
-                <span>{conflictComment.reply_count} respostas</span>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Side-by-side annotations */}
         <div className="grid grid-cols-2 gap-4 p-5 border-b border-gray-100">
@@ -846,14 +814,14 @@ function ConflictModal({
           </div>
         )}
 
-        {/* Other comments from same author (context) */}
-        {otherComments.length > 0 && (
+        {/* Comentários do autor (evidências) */}
+        {detail.comments.length > 0 && (
           <div className="p-5">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-3">
-              Outros comentários do mesmo autor ({otherComments.length})
+              Comentários do autor ({detail.comments.length})
             </h3>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {otherComments.map((c) => (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {detail.comments.map((c) => (
                 <div key={c.comment_db_id} className="bg-gray-50 rounded-lg p-3">
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.text_original}</p>
                   <div className="flex gap-3 mt-1 text-[11px] text-gray-400">
@@ -868,15 +836,49 @@ function ConflictModal({
 
         {/* Resolve buttons */}
         {isPending && (
-          <div className="flex items-center justify-between p-5 border-t border-gray-100">
-            <p className="text-xs text-gray-400">
-              A decisão é irreversível e se aplica a este comentário.
+          <div className="p-5 border-t border-gray-100">
+            <p className="text-xs text-gray-400 mb-3">
+              A decisão é irreversível e se aplica a este usuário.
             </p>
-            <div className="flex gap-3">
-              <button className="btn btn-ghost" onClick={() => onResolve("humano")}>
+            <div className="flex gap-4">
+              <button
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-colors bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                onClick={() => onResolve("humano")}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"
+                  />
+                </svg>
                 Definir como Humano
               </button>
-              <button className="btn btn-primary" onClick={() => onResolve("bot")}>
+              <button
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-colors bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                onClick={() => onResolve("bot")}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"
+                  />
+                </svg>
                 Definir como Bot
               </button>
             </div>
@@ -926,7 +928,7 @@ function BotDetailModal({
   onClose,
   onViewConflict,
 }: {
-  bot: BotCommentItem;
+  bot: BotUserItem;
   onClose: () => void;
   onViewConflict: (conflictId: string) => void;
 }) {
@@ -942,9 +944,10 @@ function BotDetailModal({
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-bold text-gray-800">Detalhes do comentário</h2>
+            <h2 className="text-lg font-bold text-gray-800">Detalhes do usuário</h2>
             <p className="text-xs text-gray-500">
-              {bot.dataset_name} &middot; {bot.author_display_name}
+              {bot.dataset_name} &middot; {bot.author_display_name} &middot; {bot.comment_count}{" "}
+              comentários
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -961,13 +964,14 @@ function BotDetailModal({
           </button>
         </div>
 
-        {/* Comment */}
+        {/* User info */}
         <div className="p-5 border-b border-gray-100">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">
-            Comentário
+            Usuário
           </h3>
           <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-sm text-gray-800 whitespace-pre-wrap">{bot.text_original}</p>
+            <p className="text-sm font-medium text-gray-800">{bot.author_display_name}</p>
+            <p className="text-xs text-gray-500 font-mono mt-1">{bot.author_channel_id}</p>
           </div>
         </div>
 
