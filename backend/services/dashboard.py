@@ -1,8 +1,7 @@
 """Serviço da US-06 — Dashboard de Análise.
 
 Agregações SQL + geração de gráficos Plotly (JSON).
-Regra: nunca carregar registros em Python para calcular —
-usar func.count, func.avg, GROUP BY no SQLAlchemy.
+Unidade de análise: DatasetEntry (autor/canal do YouTube).
 """
 
 import logging
@@ -30,7 +29,6 @@ COLORS = {
     "sky": "#0ea5e9",
 }
 
-# Layout base compartilhado por todos os gráficos
 _BASE_LAYOUT = {
     "font": {"family": "Inter, system-ui, sans-serif", "size": 12},
     "paper_bgcolor": "rgba(0,0,0,0)",
@@ -60,14 +58,13 @@ CRITERIA_GROUPS = {
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Helpers — batch loading reutilizável
+#  Helpers — batch loading por entry (usuário)
 # ═══════════════════════════════════════════════════════════════════
 
 
 def _get_datasets_filtered(
     db: Session, criteria: list[str] | None, video_id: str | None = None
 ) -> list[Dataset]:
-    """Retorna datasets, opcionalmente filtrados por critério e/ou vídeo."""
     q = db.query(Dataset)
     if video_id:
         q = q.join(Collection, Dataset.collection_id == Collection.id).filter(
@@ -84,119 +81,76 @@ def _get_datasets_filtered(
     return datasets
 
 
-def _get_comment_ids_for_datasets(
+def _get_entry_ids_for_datasets(
     db: Session, datasets: list[Dataset]
-) -> tuple[
-    dict[uuid.UUID, list[uuid.UUID]],
-    dict[uuid.UUID, tuple[uuid.UUID, str]],
-]:
-    """Retorna (ds_id → [comment_ids], comment_id → (collection_id, author_channel_id)).
-
-    Batch loading sem N+1.
-    """
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """Retorna ds_id → [entry_ids]."""
     if not datasets:
-        return {}, {}
+        return {}
 
     ds_ids = [ds.id for ds in datasets]
-
-    # entries → authors por dataset
     all_entries = (
-        db.query(DatasetEntry.dataset_id, DatasetEntry.author_channel_id)
+        db.query(DatasetEntry.dataset_id, DatasetEntry.id)
         .filter(DatasetEntry.dataset_id.in_(ds_ids))
         .all()
     )
-    authors_by_ds: dict[uuid.UUID, list[str]] = defaultdict(list)
-    for dataset_id, author_channel_id in all_entries:
-        authors_by_ds[dataset_id].append(author_channel_id)
 
-    # pares (collection_id, author_ids) para buscar comentários
-    ds_col_map = {ds.id: ds.collection_id for ds in datasets}
-    col_authors: dict[uuid.UUID, set[str]] = defaultdict(set)
-    for ds in datasets:
-        for author_id in authors_by_ds.get(ds.id, []):
-            col_authors[ds.collection_id].add(author_id)
+    ds_entry_ids: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
+    for dataset_id, entry_id in all_entries:
+        ds_entry_ids[dataset_id].append(entry_id)
 
-    # batch: todos os comentários relevantes
-    comment_info: dict[uuid.UUID, tuple[uuid.UUID, str]] = {}
-    comments_by_col_author: dict[tuple[uuid.UUID, str], list[uuid.UUID]] = defaultdict(
-        list
-    )
-
-    for col_id, author_set in col_authors.items():
-        if not author_set:
-            continue
-        rows = (
-            db.query(Comment.id, Comment.collection_id, Comment.author_channel_id)
-            .filter(
-                Comment.collection_id == col_id,
-                Comment.author_channel_id.in_(list(author_set)),
-            )
-            .all()
-        )
-        for cid, c_col_id, c_author_id in rows:
-            comment_info[cid] = (c_col_id, c_author_id)
-            comments_by_col_author[(c_col_id, c_author_id)].append(cid)
-
-    # montar comment_ids por dataset
-    ds_comment_ids: dict[uuid.UUID, list[uuid.UUID]] = {}
-    for ds in datasets:
-        ids: list[uuid.UUID] = []
-        for author_id in authors_by_ds.get(ds.id, []):
-            ids.extend(comments_by_col_author.get((ds_col_map[ds.id], author_id), []))
-        ds_comment_ids[ds.id] = ids
-
-    return ds_comment_ids, comment_info
+    return ds_entry_ids
 
 
 def _get_annotations_and_conflicts(
-    db: Session, all_comment_ids: list[uuid.UUID]
+    db: Session, all_entry_ids: list[uuid.UUID]
 ) -> tuple[
     dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
     dict[uuid.UUID, tuple[str, str | None]],
 ]:
-    """Retorna anotações e conflitos por comment_id."""
-    anns_by_comment: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = defaultdict(list)
+    """Retorna anotações e conflitos por entry_id."""
+    anns_by_entry: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = defaultdict(list)
     conflict_map: dict[uuid.UUID, tuple[str, str | None]] = {}
 
-    if not all_comment_ids:
-        return anns_by_comment, conflict_map
+    if not all_entry_ids:
+        return anns_by_entry, conflict_map
 
     all_annotations = (
-        db.query(Annotation.comment_id, Annotation.annotator_id, Annotation.label)
-        .filter(Annotation.comment_id.in_(all_comment_ids))
+        db.query(Annotation.dataset_entry_id, Annotation.annotator_id, Annotation.label)
+        .filter(Annotation.dataset_entry_id.in_(all_entry_ids))
         .all()
     )
-    for comment_id, annotator_id, label in all_annotations:
-        anns_by_comment[comment_id].append((annotator_id, label))
+    for entry_id, annotator_id, label in all_annotations:
+        anns_by_entry[entry_id].append((annotator_id, label))
 
     all_conflicts = (
         db.query(
-            AnnotationConflict.comment_id,
+            AnnotationConflict.dataset_entry_id,
             AnnotationConflict.status,
             AnnotationConflict.resolved_label,
         )
-        .filter(AnnotationConflict.comment_id.in_(all_comment_ids))
+        .filter(AnnotationConflict.dataset_entry_id.in_(all_entry_ids))
         .all()
     )
-    for comment_id, status, resolved_label in all_conflicts:
-        conflict_map[comment_id] = (status, resolved_label)
+    for entry_id, conflict_status, resolved_label in all_conflicts:
+        conflict_map[entry_id] = (conflict_status, resolved_label)
 
-    return anns_by_comment, conflict_map
+    return anns_by_entry, conflict_map
 
 
-def _classify_comment(
-    cid: uuid.UUID,
-    anns_by_comment: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
+def _classify_entry(
+    eid: uuid.UUID,
+    anns_by_entry: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
     conflict_map: dict[uuid.UUID, tuple[str, str | None]],
 ) -> str | None:
-    """Classifica um comentário: 'bot', 'humano', 'conflito' ou None (sem anotação)."""
-    anns = anns_by_comment.get(cid, [])
+    """Classifica um entry: 'bot', 'humano', 'conflito' ou None."""
+    anns = anns_by_entry.get(eid, [])
     if not anns:
         return None
 
-    if cid in conflict_map:
-        status, resolved_label = conflict_map[cid]
-        if status == "resolved" and resolved_label:
+    if eid in conflict_map:
+        entry_status, resolved_label = conflict_map[eid]
+        if entry_status == "resolved" and resolved_label:
             return resolved_label
         return "conflito"
 
@@ -207,14 +161,14 @@ def _classify_comment(
 
 
 def _compute_agreement_rate(
-    comment_ids: list[uuid.UUID],
-    anns_by_comment: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
+    entry_ids: list[uuid.UUID],
+    anns_by_entry: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
 ) -> float:
     """Agreement rate = consenso / total com 2+ anotações."""
     with_two = 0
     consensus = 0
-    for cid in comment_ids:
-        anns = anns_by_comment.get(cid, [])
+    for eid in entry_ids:
+        anns = anns_by_entry.get(eid, [])
         if len(anns) >= 2:
             with_two += 1
             labels = {label for _, label in anns}
@@ -231,7 +185,6 @@ def _compute_agreement_rate(
 
 
 def _layout(**overrides) -> dict:
-    """Mescla layout base com overrides específicos do gráfico."""
     layout = {**_BASE_LAYOUT}
     for key, val in overrides.items():
         if isinstance(val, dict) and key in layout and isinstance(layout[key], dict):
@@ -256,9 +209,7 @@ def _make_donut_chart(bots: int, humans: int, conflicts: int) -> str:
             textinfo="label+percent",
             textfont_size=12,
             hovertemplate=(
-                "<b>%{label}</b><br>"
-                "%{value} comentários (%{percent})"
-                "<extra></extra>"
+                "<b>%{label}</b><br>" "%{value} usuários (%{percent})" "<extra></extra>"
             ),
             pull=[0, 0.03, 0],
         )
@@ -320,7 +271,7 @@ def _make_comparativo_chart(datasets_data: list[dict]) -> str:
             },
             yaxis={
                 "gridcolor": "#f1f5f9",
-                "title": {"text": "Comentários", "font": {"size": 11}},
+                "title": {"text": "Usuários", "font": {"size": 11}},
             },
         )
     )
@@ -411,7 +362,6 @@ def _make_bot_rate_chart(datasets_data: list[dict], orientation: str = "h") -> s
 
 
 def _make_criteria_effectiveness_chart(data: list[dict]) -> str:
-    """Bar horizontal simples: taxa de bots (%) por critério."""
     criterios = [d["criteria"].capitalize() for d in data]
     rates = [round(d["bot_rate"] * 100, 1) for d in data]
     colors = [COLORS["bot"] if r > 10 else COLORS["teal"] for r in rates]
@@ -446,10 +396,7 @@ def _make_criteria_effectiveness_chart(data: list[dict]) -> str:
     return pio.to_json(fig, validate=False)
 
 
-def _make_agreement_by_dataset_chart(
-    datasets_data: list[dict],
-) -> str:
-    """Bar horizontal: concordância (%) por dataset."""
+def _make_agreement_by_dataset_chart(datasets_data: list[dict]) -> str:
     names = [d["name"] for d in datasets_data]
     rates = [d["agreement_rate"] for d in datasets_data]
     colors = [
@@ -560,24 +507,19 @@ def _make_user_progress_chart(datasets_data: list[dict]) -> str:
 def get_global_dashboard(db: Session, criteria: list[str] | None = None) -> dict:
     """Seção 1 — Visão Geral."""
     datasets = _get_datasets_filtered(db, criteria)
-    ds_comment_ids, comment_info = _get_comment_ids_for_datasets(db, datasets)
+    ds_entry_ids = _get_entry_ids_for_datasets(db, datasets)
 
-    all_cids = []
-    for cids in ds_comment_ids.values():
-        all_cids.extend(cids)
-    all_cids = list(set(all_cids))
+    all_eids = list({eid for eids in ds_entry_ids.values() for eid in eids})
+    anns_by_entry, conflict_map = _get_annotations_and_conflicts(db, all_eids)
 
-    anns_by_comment, conflict_map = _get_annotations_and_conflicts(db, all_cids)
-
-    # KPIs
     total_bots = 0
     total_humans = 0
     total_conflicts = 0
     pending_conflicts = 0
-    annotated_cids: set[uuid.UUID] = set()
+    annotated_eids: set[uuid.UUID] = set()
 
-    for cid in all_cids:
-        classification = _classify_comment(cid, anns_by_comment, conflict_map)
+    for eid in all_eids:
+        classification = _classify_entry(eid, anns_by_entry, conflict_map)
         if classification == "bot":
             total_bots += 1
         elif classification == "humano":
@@ -585,37 +527,34 @@ def get_global_dashboard(db: Session, criteria: list[str] | None = None) -> dict
         elif classification == "conflito":
             total_conflicts += 1
 
-        if anns_by_comment.get(cid):
-            annotated_cids.add(cid)
+        if anns_by_entry.get(eid):
+            annotated_eids.add(eid)
 
-    # conflitos totais e pendentes
-    for cid in all_cids:
-        if cid in conflict_map:
-            status, _ = conflict_map[cid]
-            if status == "pending":
+    for eid in all_eids:
+        if eid in conflict_map:
+            entry_status, _ = conflict_map[eid]
+            if entry_status == "pending":
                 pending_conflicts += 1
 
-    total_all_conflicts = sum(1 for cid in all_cids if cid in conflict_map)
-    agreement_rate = _compute_agreement_rate(all_cids, anns_by_comment)
+    total_all_conflicts = sum(1 for eid in all_eids if eid in conflict_map)
+    agreement_rate = _compute_agreement_rate(all_eids, anns_by_entry)
 
-    # Dados por dataset para gráficos
     datasets_chart_data = []
     for ds in datasets:
-        cids = ds_comment_ids.get(ds.id, [])
-        bots = humans = conflicts = 0
-        annotated = 0
-        for cid in cids:
-            cl = _classify_comment(cid, anns_by_comment, conflict_map)
+        eids = ds_entry_ids.get(ds.id, [])
+        bots = humans = conflicts = annotated = 0
+        for eid in eids:
+            cl = _classify_entry(eid, anns_by_entry, conflict_map)
             if cl == "bot":
                 bots += 1
             elif cl == "humano":
                 humans += 1
             elif cl == "conflito":
                 conflicts += 1
-            if anns_by_comment.get(cid):
+            if anns_by_entry.get(eid):
                 annotated += 1
         bot_rate = (bots / annotated * 100) if annotated > 0 else 0.0
-        ds_agreement = _compute_agreement_rate(cids, anns_by_comment)
+        ds_agreement = _compute_agreement_rate(eids, anns_by_entry)
         datasets_chart_data.append(
             {
                 "name": ds.name,
@@ -627,17 +566,14 @@ def get_global_dashboard(db: Session, criteria: list[str] | None = None) -> dict
             }
         )
 
-    # Timeline de anotações (agrupado por dia)
-    annotation_buckets = _get_annotation_timeline(db, all_cids)
+    annotation_buckets = _get_annotation_timeline(db, all_eids)
 
-    # Eficácia por critério
     criteria_data = _compute_criteria_effectiveness(
-        db, datasets, ds_comment_ids, anns_by_comment, conflict_map
+        db, datasets, ds_entry_ids, anns_by_entry, conflict_map
     )
 
-    # Progresso geral
-    total_in_datasets = len(all_cids)
-    total_annotated_count = len(annotated_cids)
+    total_in_datasets = len(all_eids)
+    total_annotated_count = len(annotated_eids)
     annotation_progress = (
         round(total_annotated_count / total_in_datasets * 100, 1)
         if total_in_datasets > 0
@@ -647,8 +583,8 @@ def get_global_dashboard(db: Session, criteria: list[str] | None = None) -> dict
     return {
         "summary": {
             "total_datasets": len(datasets),
-            "total_comments_annotated": total_annotated_count,
-            "total_comments_in_datasets": total_in_datasets,
+            "total_users_annotated": total_annotated_count,
+            "total_users_in_datasets": total_in_datasets,
             "annotation_progress": annotation_progress,
             "total_bots": total_bots,
             "total_humans": total_humans,
@@ -676,7 +612,6 @@ def get_video_dashboard(
     db: Session, video_id: str, criteria: list[str] | None = None
 ) -> dict:
     """Seção 2 — Por Vídeo."""
-    # Total de comentários coletados para este vídeo
     total_collected = (
         db.query(func.count(Comment.id))
         .join(Collection)
@@ -685,10 +620,10 @@ def get_video_dashboard(
     ) or 0
 
     datasets = _get_datasets_filtered(db, criteria, video_id=video_id)
-    ds_comment_ids, comment_info = _get_comment_ids_for_datasets(db, datasets)
+    ds_entry_ids = _get_entry_ids_for_datasets(db, datasets)
 
-    all_cids = list({cid for cids in ds_comment_ids.values() for cid in cids})
-    anns_by_comment, conflict_map = _get_annotations_and_conflicts(db, all_cids)
+    all_eids = list({eid for eids in ds_entry_ids.values() for eid in eids})
+    anns_by_entry, conflict_map = _get_annotations_and_conflicts(db, all_eids)
 
     total_bots = 0
     total_humans = 0
@@ -696,36 +631,35 @@ def get_video_dashboard(
     pending_conflicts = 0
     annotated_count = 0
 
-    for cid in all_cids:
-        cl = _classify_comment(cid, anns_by_comment, conflict_map)
+    for eid in all_eids:
+        cl = _classify_entry(eid, anns_by_entry, conflict_map)
         if cl == "bot":
             total_bots += 1
         elif cl == "humano":
             total_humans += 1
         elif cl == "conflito":
             total_conflicts += 1
-        if anns_by_comment.get(cid):
+        if anns_by_entry.get(eid):
             annotated_count += 1
-        if cid in conflict_map and conflict_map[cid][0] == "pending":
+        if eid in conflict_map and conflict_map[eid][0] == "pending":
             pending_conflicts += 1
 
-    all_conflicts_count = sum(1 for cid in all_cids if cid in conflict_map)
-    agreement_rate = _compute_agreement_rate(all_cids, anns_by_comment)
+    all_conflicts_count = sum(1 for eid in all_eids if eid in conflict_map)
+    agreement_rate = _compute_agreement_rate(all_eids, anns_by_entry)
 
-    # Dados por dataset
     datasets_chart_data = []
     for ds in datasets:
-        cids = ds_comment_ids.get(ds.id, [])
+        eids = ds_entry_ids.get(ds.id, [])
         bots = humans = conflicts = annotated = 0
-        for cid in cids:
-            cl = _classify_comment(cid, anns_by_comment, conflict_map)
+        for eid in eids:
+            cl = _classify_entry(eid, anns_by_entry, conflict_map)
             if cl == "bot":
                 bots += 1
             elif cl == "humano":
                 humans += 1
             elif cl == "conflito":
                 conflicts += 1
-            if anns_by_comment.get(cid):
+            if anns_by_entry.get(eid):
                 annotated += 1
         bot_rate = (bots / annotated * 100) if annotated > 0 else 0.0
         datasets_chart_data.append(
@@ -738,22 +672,18 @@ def get_video_dashboard(
             }
         )
 
-    # Taxa de bots por critério neste vídeo
     criteria_rates = _compute_bot_rate_by_criteria(
-        datasets, ds_comment_ids, anns_by_comment, conflict_map
+        datasets, ds_entry_ids, anns_by_entry, conflict_map
     )
 
-    # Timeline de comentários postados
     comment_timeline = _get_comment_published_timeline(db, video_id)
-
-    # Destaques do vídeo
     highlights = _compute_video_highlights(db, video_id)
 
     return {
         "video_id": video_id,
         "summary": {
             "total_comments_collected": total_collected,
-            "total_comments_in_datasets": len(all_cids),
+            "total_users_in_datasets": len(all_eids),
             "total_annotated": annotated_count,
             "total_bots": total_bots,
             "total_humans": total_humans,
@@ -776,50 +706,49 @@ def get_video_dashboard(
 
 def get_user_dashboard(db: Session, user_id: uuid.UUID) -> dict:
     """Seção 3 — Meu Progresso."""
-    # Todos os datasets (sem filtro — o usuário pode anotar em qualquer um)
     datasets = db.query(Dataset).order_by(Dataset.created_at.desc()).all()
     if not datasets:
         return _empty_user_response()
 
-    ds_comment_ids, comment_info = _get_comment_ids_for_datasets(db, datasets)
-    all_cids = list({cid for cids in ds_comment_ids.values() for cid in cids})
+    ds_entry_ids = _get_entry_ids_for_datasets(db, datasets)
+    all_eids = list({eid for eids in ds_entry_ids.values() for eid in eids})
 
-    # Anotações do usuário autenticado
+    # Anotações do usuário autenticado (por entry)
     my_annotations: dict[uuid.UUID, str] = {}
-    if all_cids:
+    if all_eids:
         rows = (
-            db.query(Annotation.comment_id, Annotation.label)
+            db.query(Annotation.dataset_entry_id, Annotation.label)
             .filter(
-                Annotation.comment_id.in_(all_cids),
+                Annotation.dataset_entry_id.in_(all_eids),
                 Annotation.annotator_id == user_id,
             )
             .all()
         )
-        my_annotations = {cid: label for cid, label in rows}
+        my_annotations = {eid: label for eid, label in rows}
 
     # Conflitos gerados pelo usuário
-    my_conflict_cids: set[uuid.UUID] = set()
-    if all_cids:
+    my_conflict_eids: set[uuid.UUID] = set()
+    if all_eids:
         conflict_rows = (
-            db.query(AnnotationConflict.comment_id)
+            db.query(AnnotationConflict.dataset_entry_id)
             .join(Annotation, AnnotationConflict.annotation_a_id == Annotation.id)
             .filter(
-                AnnotationConflict.comment_id.in_(all_cids),
+                AnnotationConflict.dataset_entry_id.in_(all_eids),
                 Annotation.annotator_id == user_id,
             )
             .all()
         )
-        my_conflict_cids.update(r[0] for r in conflict_rows)
+        my_conflict_eids.update(r[0] for r in conflict_rows)
         conflict_rows_b = (
-            db.query(AnnotationConflict.comment_id)
+            db.query(AnnotationConflict.dataset_entry_id)
             .join(Annotation, AnnotationConflict.annotation_b_id == Annotation.id)
             .filter(
-                AnnotationConflict.comment_id.in_(all_cids),
+                AnnotationConflict.dataset_entry_id.in_(all_eids),
                 Annotation.annotator_id == user_id,
             )
             .all()
         )
-        my_conflict_cids.update(r[0] for r in conflict_rows_b)
+        my_conflict_eids.update(r[0] for r in conflict_rows_b)
 
     # collection_id por dataset
     ds_col_map = {ds.id: ds.collection_id for ds in datasets}
@@ -833,7 +762,6 @@ def get_user_dashboard(db: Session, user_id: uuid.UUID) -> dict:
         )
         col_video_map = {c_id: vid for c_id, vid in cols}
 
-    # Progresso por dataset
     ds_progress = []
     total_annotated = 0
     total_pending = 0
@@ -844,30 +772,28 @@ def get_user_dashboard(db: Session, user_id: uuid.UUID) -> dict:
     datasets_with_data = 0
 
     for ds in datasets:
-        cids = ds_comment_ids.get(ds.id, [])
-        if not cids:
+        eids = ds_entry_ids.get(ds.id, [])
+        if not eids:
             continue
 
-        annotated_by_me = sum(1 for cid in cids if cid in my_annotations)
-        pending = len(cids) - annotated_by_me
+        annotated_by_me = sum(1 for eid in eids if eid in my_annotations)
+        pending = len(eids) - annotated_by_me
 
-        # Apenas contar o dataset se o usuário tem algo para anotar
-        # (todos os datasets são atribuídos a todos os anotadores)
         datasets_with_data += 1
 
-        my_bots = sum(1 for cid in cids if my_annotations.get(cid) == "bot")
-        my_humans = sum(1 for cid in cids if my_annotations.get(cid) == "humano")
-        my_conflicts = sum(1 for cid in cids if cid in my_conflict_cids)
+        my_bots = sum(1 for eid in eids if my_annotations.get(eid) == "bot")
+        my_humans = sum(1 for eid in eids if my_annotations.get(eid) == "humano")
+        my_conflicts = sum(1 for eid in eids if eid in my_conflict_eids)
 
-        percent = round(annotated_by_me / len(cids) * 100, 1) if cids else 0.0
+        percent = round(annotated_by_me / len(eids) * 100, 1) if eids else 0.0
 
-        if annotated_by_me == len(cids):
-            status = "completed"
+        if annotated_by_me == len(eids):
+            ds_status = "completed"
             datasets_completed += 1
         elif annotated_by_me > 0:
-            status = "in_progress"
+            ds_status = "in_progress"
         else:
-            status = "not_started"
+            ds_status = "not_started"
 
         total_annotated += annotated_by_me
         total_pending += pending
@@ -880,22 +806,20 @@ def get_user_dashboard(db: Session, user_id: uuid.UUID) -> dict:
                 "dataset_id": ds.id,
                 "dataset_name": ds.name,
                 "video_id": col_video_map.get(ds_col_map[ds.id], ""),
-                "total_comments": len(cids),
+                "total_users": len(eids),
                 "annotated_by_me": annotated_by_me,
                 "pending": pending,
                 "percent_complete": percent,
                 "my_bots": my_bots,
                 "my_conflicts": my_conflicts,
-                "status": status,
+                "status": ds_status,
             }
         )
 
     datasets_pending = datasets_with_data - datasets_completed
 
-    # Timeline de minhas anotações
     my_timeline = _get_user_annotation_timeline(db, user_id)
 
-    # Gráficos
     progress_chart_data = [
         {"name": d["dataset_name"], "percent": d["percent_complete"]}
         for d in ds_progress
@@ -921,7 +845,7 @@ def get_user_dashboard(db: Session, user_id: uuid.UUID) -> dict:
     }
 
 
-def get_bot_comments(
+def get_bot_users(
     db: Session,
     dataset_id: str | None = None,
     video_id: str | None = None,
@@ -931,23 +855,17 @@ def get_bot_comments(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """Tabela de comentários classificados como bot."""
+    """Tabela de usuários classificados como bot."""
     q = (
         db.query(
             Dataset.name.label("dataset_name"),
             Dataset.id.label("dataset_id"),
-            Comment.author_display_name,
-            Comment.author_channel_id,
-            Comment.text_original,
-            Annotation.comment_id,
+            DatasetEntry.id.label("entry_id"),
+            DatasetEntry.author_display_name,
+            DatasetEntry.author_channel_id,
         )
         .join(DatasetEntry, DatasetEntry.dataset_id == Dataset.id)
-        .join(
-            Comment,
-            (Comment.collection_id == Dataset.collection_id)
-            & (Comment.author_channel_id == DatasetEntry.author_channel_id),
-        )
-        .join(Annotation, Annotation.comment_id == Comment.id)
+        .join(Annotation, Annotation.dataset_entry_id == DatasetEntry.id)
         .filter(Annotation.label == "bot")
     )
 
@@ -958,42 +876,40 @@ def get_bot_comments(
             Collection.video_id == video_id
         )
     if author:
-        q = q.filter(Comment.author_display_name.ilike(f"%{author}%"))
-    if search:
-        q = q.filter(Comment.text_original.ilike(f"%{search}%"))
+        q = q.filter(DatasetEntry.author_display_name.ilike(f"%{author}%"))
     if criteria_filter:
         for crit in criteria_filter:
             q = q.filter(Dataset.criteria_applied.any(crit))
 
-    q = q.distinct(Annotation.comment_id)
+    q = q.distinct(DatasetEntry.id)
     total = q.count()
 
     rows = (
-        q.order_by(Annotation.comment_id)
+        q.order_by(DatasetEntry.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
 
-    comment_ids = [r.comment_id for r in rows]
+    entry_ids = [r.entry_id for r in rows]
 
     # Batch: conflitos
     conflict_status_map: dict[uuid.UUID, str] = {}
-    if comment_ids:
+    if entry_ids:
         conflicts = (
-            db.query(AnnotationConflict.comment_id, AnnotationConflict.status)
-            .filter(AnnotationConflict.comment_id.in_(comment_ids))
+            db.query(AnnotationConflict.dataset_entry_id, AnnotationConflict.status)
+            .filter(AnnotationConflict.dataset_entry_id.in_(entry_ids))
             .all()
         )
-        conflict_status_map = {cid: st for cid, st in conflicts}
+        conflict_status_map = {eid: st for eid, st in conflicts}
 
     # Batch: concordância + nº de anotadores
     concordance_map: dict[uuid.UUID, int] = {}
     annotators_map: dict[uuid.UUID, int] = {}
-    if comment_ids:
+    if entry_ids:
         ann_counts = (
             db.query(
-                Annotation.comment_id,
+                Annotation.dataset_entry_id,
                 func.count(Annotation.id).label("total"),
                 func.count(
                     case(
@@ -1001,16 +917,16 @@ def get_bot_comments(
                     )
                 ).label("bot_count"),
             )
-            .filter(Annotation.comment_id.in_(comment_ids))
-            .group_by(Annotation.comment_id)
+            .filter(Annotation.dataset_entry_id.in_(entry_ids))
+            .group_by(Annotation.dataset_entry_id)
             .all()
         )
-        for cid, total_anns, bot_count in ann_counts:
-            annotators_map[cid] = total_anns
+        for eid, total_anns, bot_count in ann_counts:
+            annotators_map[eid] = total_anns
             if total_anns > 0:
-                concordance_map[cid] = round(bot_count / total_anns * 100)
+                concordance_map[eid] = round(bot_count / total_anns * 100)
 
-    # Batch: critérios que flagaram cada autor (via DatasetEntry)
+    # Batch: critérios + comment_count
     ds_ids = list({r.dataset_id for r in rows})
     author_ids = list({r.author_channel_id for r in rows if r.author_channel_id})
     criteria_map: dict[str, list[str]] = {}
@@ -1033,16 +949,37 @@ def get_bot_comments(
                 if c not in criteria_map[aid]:
                     criteria_map[aid].append(c)
 
+    # Comment counts
+    cc_map: dict[uuid.UUID, int] = {}
+    if entry_ids:
+        comment_counts = (
+            db.query(
+                DatasetEntry.id,
+                func.count(Comment.id).label("cc"),
+            )
+            .join(Dataset, Dataset.id == DatasetEntry.dataset_id)
+            .join(
+                Comment,
+                (Comment.collection_id == Dataset.collection_id)
+                & (Comment.author_channel_id == DatasetEntry.author_channel_id),
+            )
+            .filter(DatasetEntry.id.in_(entry_ids))
+            .group_by(DatasetEntry.id)
+            .all()
+        )
+        cc_map = {eid: cc for eid, cc in comment_counts}
+
     items = []
     for row in rows:
         items.append(
             {
                 "dataset_name": row.dataset_name,
                 "author_display_name": row.author_display_name,
-                "text_original": row.text_original,
-                "concordance_pct": concordance_map.get(row.comment_id, 0),
-                "conflict_status": conflict_status_map.get(row.comment_id),
-                "annotators_count": annotators_map.get(row.comment_id, 0),
+                "author_channel_id": row.author_channel_id,
+                "comment_count": cc_map.get(row.entry_id, 0),
+                "concordance_pct": concordance_map.get(row.entry_id, 0),
+                "conflict_status": conflict_status_map.get(row.entry_id),
+                "annotators_count": annotators_map.get(row.entry_id, 0),
                 "criteria": criteria_map.get(row.author_channel_id, []),
             }
         )
@@ -1051,17 +988,16 @@ def get_bot_comments(
 
 
 def get_criteria_effectiveness(db: Session, video_id: str | None = None) -> list[dict]:
-    """Eficácia de cada critério de limpeza."""
     datasets = _get_datasets_filtered(db, criteria=None, video_id=video_id)
     if not datasets:
         return []
 
-    ds_comment_ids, _ = _get_comment_ids_for_datasets(db, datasets)
-    all_cids = list({cid for cids in ds_comment_ids.values() for cid in cids})
-    anns_by_comment, conflict_map = _get_annotations_and_conflicts(db, all_cids)
+    ds_entry_ids = _get_entry_ids_for_datasets(db, datasets)
+    all_eids = list({eid for eids in ds_entry_ids.values() for eid in eids})
+    anns_by_entry, conflict_map = _get_annotations_and_conflicts(db, all_eids)
 
     return _compute_criteria_effectiveness(
-        db, datasets, ds_comment_ids, anns_by_comment, conflict_map
+        db, datasets, ds_entry_ids, anns_by_entry, conflict_map
     )
 
 
@@ -1070,16 +1006,15 @@ def get_criteria_effectiveness(db: Session, video_id: str | None = None) -> list
 # ═══════════════════════════════════════════════════════════════════
 
 
-def _get_annotation_timeline(db: Session, comment_ids: list[uuid.UUID]) -> list[dict]:
-    """Anotações agrupadas por dia."""
-    if not comment_ids:
+def _get_annotation_timeline(db: Session, entry_ids: list[uuid.UUID]) -> list[dict]:
+    if not entry_ids:
         return []
     rows = (
         db.query(
             cast(Annotation.annotated_at, Date).label("day"),
             func.count(Annotation.id),
         )
-        .filter(Annotation.comment_id.in_(comment_ids))
+        .filter(Annotation.dataset_entry_id.in_(entry_ids))
         .group_by("day")
         .order_by("day")
         .all()
@@ -1088,7 +1023,6 @@ def _get_annotation_timeline(db: Session, comment_ids: list[uuid.UUID]) -> list[
 
 
 def _get_user_annotation_timeline(db: Session, user_id: uuid.UUID) -> list[dict]:
-    """Anotações do usuário agrupadas por dia."""
     rows = (
         db.query(
             cast(Annotation.annotated_at, Date).label("day"),
@@ -1103,7 +1037,6 @@ def _get_user_annotation_timeline(db: Session, user_id: uuid.UUID) -> list[dict]
 
 
 def _get_comment_published_timeline(db: Session, video_id: str) -> list[dict]:
-    """Comentários publicados agrupados por dia para um vídeo."""
     rows = (
         db.query(
             cast(Comment.published_at, Date).label("day"),
@@ -1120,24 +1053,23 @@ def _get_comment_published_timeline(db: Session, video_id: str) -> list[dict]:
 
 def _compute_bot_rate_by_criteria(
     datasets: list[Dataset],
-    ds_comment_ids: dict[uuid.UUID, list[uuid.UUID]],
-    anns_by_comment: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
+    ds_entry_ids: dict[uuid.UUID, list[uuid.UUID]],
+    anns_by_entry: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
     conflict_map: dict[uuid.UUID, tuple[str, str | None]],
 ) -> list[dict]:
-    """Taxa de bots agrupada por critério para gráfico horizontal."""
     criteria_stats: dict[str, dict] = {}
 
     for ds in datasets:
-        cids = ds_comment_ids.get(ds.id, [])
-        if not cids:
+        eids = ds_entry_ids.get(ds.id, [])
+        if not eids:
             continue
 
         bots = sum(
             1
-            for cid in cids
-            if _classify_comment(cid, anns_by_comment, conflict_map) == "bot"
+            for eid in eids
+            if _classify_entry(eid, anns_by_entry, conflict_map) == "bot"
         )
-        annotated = sum(1 for cid in cids if anns_by_comment.get(cid))
+        annotated = sum(1 for eid in eids if anns_by_entry.get(eid))
 
         for crit in ds.criteria_applied or []:
             if crit not in criteria_stats:
@@ -1157,32 +1089,30 @@ def _compute_bot_rate_by_criteria(
 def _compute_criteria_effectiveness(
     db: Session,
     datasets: list[Dataset],
-    ds_comment_ids: dict[uuid.UUID, list[uuid.UUID]],
-    anns_by_comment: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
+    ds_entry_ids: dict[uuid.UUID, list[uuid.UUID]],
+    anns_by_entry: dict[uuid.UUID, list[tuple[uuid.UUID, str]]],
     conflict_map: dict[uuid.UUID, tuple[str, str | None]],
 ) -> list[dict]:
-    """Calcula eficácia de cada critério: datasets, comentários, bots, taxa."""
     criteria_stats: dict[str, dict] = {}
 
     for ds in datasets:
-        cids = ds_comment_ids.get(ds.id, [])
+        eids = ds_entry_ids.get(ds.id, [])
         bots = sum(
             1
-            for cid in cids
-            if _classify_comment(cid, anns_by_comment, conflict_map) == "bot"
+            for eid in eids
+            if _classify_entry(eid, anns_by_entry, conflict_map) == "bot"
         )
         for crit in ds.criteria_applied or []:
             if crit not in criteria_stats:
                 criteria_stats[crit] = {
                     "total_datasets": 0,
-                    "total_comments_selected": 0,
+                    "total_users_selected": 0,
                     "total_bots": 0,
                 }
             criteria_stats[crit]["total_datasets"] += 1
-            criteria_stats[crit]["total_comments_selected"] += len(cids)
+            criteria_stats[crit]["total_users_selected"] += len(eids)
             criteria_stats[crit]["total_bots"] += bots
 
-    # Ordenar: numéricos primeiro, depois comportamentais
     ordered_criteria = [
         "percentil",
         "media",
@@ -1200,8 +1130,8 @@ def _compute_criteria_effectiveness(
             continue
         stats = criteria_stats[crit]
         bot_rate = (
-            stats["total_bots"] / stats["total_comments_selected"]
-            if stats["total_comments_selected"] > 0
+            stats["total_bots"] / stats["total_users_selected"]
+            if stats["total_users_selected"] > 0
             else 0.0
         )
         result.append(
@@ -1209,7 +1139,7 @@ def _compute_criteria_effectiveness(
                 "criteria": crit,
                 "group": CRITERIA_GROUPS.get(crit, "outro"),
                 "total_datasets": stats["total_datasets"],
-                "total_comments_selected": stats["total_comments_selected"],
+                "total_users_selected": stats["total_users_selected"],
                 "total_bots": stats["total_bots"],
                 "bot_rate": round(bot_rate, 4),
             }
@@ -1218,12 +1148,9 @@ def _compute_criteria_effectiveness(
 
 
 def _compute_video_highlights(db: Session, video_id: str) -> list[dict]:
-    """Destaques estatísticos do vídeo baseados nos comentários coletados."""
     base = db.query(Comment).join(Collection).filter(Collection.video_id == video_id)
-
     highlights: list[dict] = []
 
-    # 1. Autor com mais comentários
     top_author = (
         db.query(
             Comment.author_display_name,
@@ -1244,7 +1171,6 @@ def _compute_video_highlights(db: Session, video_id: str) -> list[dict]:
             }
         )
 
-    # 2. Comentário com mais respostas
     top_replies = base.order_by(Comment.reply_count.desc()).first()
     if top_replies and top_replies.reply_count > 0:
         text = top_replies.text_original
@@ -1257,7 +1183,6 @@ def _compute_video_highlights(db: Session, video_id: str) -> list[dict]:
             }
         )
 
-    # 3. Comentário com mais likes
     top_likes = base.order_by(Comment.like_count.desc()).first()
     if top_likes and top_likes.like_count > 0:
         text = top_likes.text_original
@@ -1270,7 +1195,6 @@ def _compute_video_highlights(db: Session, video_id: str) -> list[dict]:
             }
         )
 
-    # 4. Conta mais nova (canal criado mais recentemente)
     newest = (
         base.filter(Comment.author_channel_published_at.isnot(None))
         .order_by(Comment.author_channel_published_at.desc())
@@ -1286,7 +1210,6 @@ def _compute_video_highlights(db: Session, video_id: str) -> list[dict]:
             }
         )
 
-    # 5. Conta mais antiga
     oldest = (
         base.filter(Comment.author_channel_published_at.isnot(None))
         .order_by(Comment.author_channel_published_at.asc())
@@ -1306,7 +1229,6 @@ def _compute_video_highlights(db: Session, video_id: str) -> list[dict]:
             }
         )
 
-    # 6. Média de likes por comentário
     avg_likes = (
         db.query(func.avg(Comment.like_count))
         .join(Collection)
@@ -1326,7 +1248,6 @@ def _compute_video_highlights(db: Session, video_id: str) -> list[dict]:
 
 
 def _empty_user_response() -> dict:
-    """Resposta vazia para quando não há datasets."""
     return {
         "summary": {
             "total_datasets_assigned": 0,

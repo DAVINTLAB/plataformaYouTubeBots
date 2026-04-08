@@ -12,11 +12,10 @@ class ResolveRequest(BaseModel):
     resolved_label: Literal["bot", "humano"]
 
 
-class ReviewImportComment(BaseModel):
-    comment_db_id: uuid.UUID
+class ReviewImportUser(BaseModel):
+    entry_id: uuid.UUID
     author_channel_id: str
     author_display_name: str
-    text_original: str
     final_label: Literal["bot", "humano"]
     annotations: list[dict] = []
     resolution: dict | None = None
@@ -27,14 +26,14 @@ class ReviewImport(BaseModel):
 
     dataset_name: str
     video_id: str
-    comments: list[ReviewImportComment] = Field(min_length=1)
+    users: list[ReviewImportUser] = Field(min_length=1)
     done: bool = True
 
 
 class ReviewImportChunk(BaseModel):
-    """Batch adicional de comentários revisados para import paginado."""
+    """Batch adicional de usuários revisados para import paginado."""
 
-    comments: list[ReviewImportComment] = Field(min_length=1)
+    users: list[ReviewImportUser] = Field(min_length=1)
     done: bool = False
 
 
@@ -43,11 +42,12 @@ class ReviewImportChunk(BaseModel):
 
 class ConflictListItem(BaseModel):
     conflict_id: uuid.UUID
-    comment_id: uuid.UUID
+    entry_id: uuid.UUID
     dataset_id: uuid.UUID
     dataset_name: str
     author_display_name: str
-    text_original: str
+    author_channel_id: str
+    comment_count: int
     label_a: str
     annotator_a: str
     justificativa_a: str | None
@@ -101,11 +101,11 @@ class BotAnnotationDetail(BaseModel):
     justificativa: str | None
 
 
-class BotCommentItem(BaseModel):
-    comment_db_id: uuid.UUID
-    text_original: str
+class BotUserItem(BaseModel):
+    entry_id: uuid.UUID
     author_display_name: str
     author_channel_id: str
+    comment_count: int
     dataset_id: uuid.UUID
     dataset_name: str
     annotations: list[BotAnnotationDetail]
@@ -126,7 +126,7 @@ class PaginatedBots(BaseModel):
     page: int
     page_size: int
     total_pages: int
-    items: list[BotCommentItem]
+    items: list[BotUserItem]
 
 
 class ReviewStats(BaseModel):

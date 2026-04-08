@@ -63,6 +63,7 @@ def _make_dataset(
     )
     db.add(ds)
     db.flush()
+    entries = []
     for channel_id in author_channel_ids:
         entry = DatasetEntry(
             dataset_id=ds.id,
@@ -72,13 +73,14 @@ def _make_dataset(
             matched_criteria=criteria,
         )
         db.add(entry)
+        entries.append(entry)
     db.flush()
-    return ds
+    return ds, entries
 
 
-def _annotate(db, comment, user, label, justificativa=None):
+def _annotate(db, entry, user, label, justificativa=None):
     ann = Annotation(
-        comment_id=comment.id,
+        dataset_entry_id=entry.id,
         annotator_id=user.id,
         label=label,
         justificativa=justificativa,
@@ -91,7 +93,7 @@ def _annotate(db, comment, user, label, justificativa=None):
 
 def _make_conflict(
     db,
-    comment,
+    entry,
     ann_a,
     ann_b,
     *,
@@ -100,7 +102,7 @@ def _make_conflict(
     status="pending",
 ):
     conflict = AnnotationConflict(
-        comment_id=comment.id,
+        dataset_entry_id=entry.id,
         annotation_a_id=ann_a.id,
         annotation_b_id=ann_b.id,
         status=status,
@@ -121,16 +123,17 @@ def _assert_valid_plotly_json(chart_json: str):
 
 
 def _populate_full_scenario(db, user_a, user_b):
-    """Cria cenário completo: 2 vídeos, 3 datasets, anotações, conflitos.
+    """Cria cenário completo: 2 vídeos, 3 datasets, anotações por entry.
 
+    Unidade de anotação: entry (autor/canal do YouTube).
     Retorna dict com referências para assertions nos testes.
     """
     # Vídeo 1 — 2 datasets com critérios diferentes
     col1 = _make_collection(db, user_a.id, video_id="vid_alpha")
-    comments_a1 = _make_comments(db, col1.id, "author_a", count=3)
-    comments_b1 = _make_comments(db, col1.id, "author_b", count=2)
+    _make_comments(db, col1.id, "author_a", count=3)
+    _make_comments(db, col1.id, "author_b", count=2)
 
-    ds1 = _make_dataset(
+    ds1, entries1 = _make_dataset(
         db,
         col1.id,
         user_a.id,
@@ -138,7 +141,7 @@ def _populate_full_scenario(db, user_a, user_b):
         criteria=["percentil"],
         name="alpha_percentil",
     )
-    ds2 = _make_dataset(
+    ds2, entries2 = _make_dataset(
         db,
         col1.id,
         user_a.id,
@@ -147,63 +150,52 @@ def _populate_full_scenario(db, user_a, user_b):
         name="alpha_media_curtos",
     )
 
-    # Vídeo 2 — 1 dataset
+    # Vídeo 2 — 1 dataset com 2 autores
     col2 = _make_collection(db, user_a.id, video_id="vid_beta")
-    comments_c2 = _make_comments(db, col2.id, "author_c", count=4)
-    ds3 = _make_dataset(
+    _make_comments(db, col2.id, "author_c", count=4)
+    _make_comments(db, col2.id, "author_d", count=2)
+    ds3, entries3 = _make_dataset(
         db,
         col2.id,
         user_a.id,
-        ["author_c"],
+        ["author_c", "author_d"],
         criteria=["percentil", "identicos"],
         name="beta_percentil_identicos",
     )
 
-    # ── Anotações do vídeo 1 ──
+    entry_a = entries1[0]  # author_a
+    entry_b = entries2[0]  # author_b
+    entry_c = entries3[0]  # author_c
+    entry_d = entries3[1]  # author_d
 
-    # ds1: author_a → 3 comentários
-    # comment_a1[0]: consenso bot (ambos dizem bot)
-    _annotate(db, comments_a1[0], user_a, "bot", "spam")
-    _annotate(db, comments_a1[0], user_b, "bot", "concordo")
+    # ── Anotações por entry (usuario) ──
 
-    # comment_a1[1]: consenso humano
-    _annotate(db, comments_a1[1], user_a, "humano")
-    _annotate(db, comments_a1[1], user_b, "humano")
+    # entry_a (author_a): conflito pendente (A=bot, B=humano)
+    ann_ea_a = _annotate(db, entry_a, user_a, "bot", "suspeito")
+    ann_ea_b = _annotate(db, entry_a, user_b, "humano")
+    _make_conflict(db, entry_a, ann_ea_a, ann_ea_b, status="pending")
 
-    # comment_a1[2]: conflito pendente
-    ann_a2_a = _annotate(db, comments_a1[2], user_a, "bot", "suspeito")
-    ann_a2_b = _annotate(db, comments_a1[2], user_b, "humano")
-    _make_conflict(db, comments_a1[2], ann_a2_a, ann_a2_b, status="pending")
-
-    # ds2: author_b → 2 comentários
-    # comment_b1[0]: conflito resolvido como bot
-    ann_b0_a = _annotate(db, comments_b1[0], user_a, "bot", "repetitivo")
-    ann_b0_b = _annotate(db, comments_b1[0], user_b, "humano")
+    # entry_b (author_b): conflito resolvido como bot
+    ann_eb_a = _annotate(db, entry_b, user_a, "bot", "repetitivo")
+    ann_eb_b = _annotate(db, entry_b, user_b, "humano")
     _make_conflict(
         db,
-        comments_b1[0],
-        ann_b0_a,
-        ann_b0_b,
+        entry_b,
+        ann_eb_a,
+        ann_eb_b,
         status="resolved",
         resolved_by=user_a.id,
         resolved_label="bot",
     )
 
-    # comment_b1[1]: apenas user_a anotou (1 anotação)
-    _annotate(db, comments_b1[1], user_a, "humano")
+    # entry_c (author_c): consenso humano
+    _annotate(db, entry_c, user_a, "humano")
+    _annotate(db, entry_c, user_b, "humano")
 
-    # ── Anotações do vídeo 2 ──
+    # entry_d (author_d): consenso bot
+    _annotate(db, entry_d, user_a, "bot", "bot óbvio")
+    _annotate(db, entry_d, user_b, "bot", "concordo")
 
-    # ds3: author_c → 4 comentários
-    # comment_c2[0]: consenso humano
-    _annotate(db, comments_c2[0], user_a, "humano")
-    _annotate(db, comments_c2[0], user_b, "humano")
-
-    # comment_c2[1]: consenso bot
-    _annotate(db, comments_c2[1], user_a, "bot", "bot óbvio")
-    _annotate(db, comments_c2[1], user_b, "bot", "concordo")
-
-    # comment_c2[2] e [3]: sem anotação
     db.commit()
 
     return {
@@ -212,9 +204,10 @@ def _populate_full_scenario(db, user_a, user_b):
         "ds1": ds1,
         "ds2": ds2,
         "ds3": ds3,
-        "comments_a1": comments_a1,
-        "comments_b1": comments_b1,
-        "comments_c2": comments_c2,
+        "entry_a": entry_a,
+        "entry_b": entry_b,
+        "entry_c": entry_c,
+        "entry_d": entry_d,
     }
 
 
@@ -234,17 +227,16 @@ class TestGlobalDashboard:
 
         s = data["summary"]
         assert s["total_datasets"] == 3
-        # bots: consenso bot em vid_alpha (author_a[0]) + resolvido bot (author_b[0])
-        #        + consenso bot em vid_beta (author_c[1]) = 3
-        assert s["total_bots"] == 3
-        # humanos: consenso humano (a[1]) + 1 anotação humano (b[1]) + consenso (c[0]) = 3
-        assert s["total_humans"] == 3
-        # conflitos totais: 2 (pendente + resolvido)
+        # bots: resolvido bot (entry_b) + consenso bot (entry_d) = 2
+        assert s["total_bots"] == 2
+        # humanos: consenso humano (entry_c) = 1
+        assert s["total_humans"] == 1
+        # conflitos totais: 2 (pendente entry_a + resolvido entry_b)
         assert s["total_conflicts"] == 2
         assert s["pending_conflicts"] == 1
 
         # Progresso geral
-        assert s["total_comments_in_datasets"] > 0
+        assert s["total_users_in_datasets"] == 4
         assert 0 <= s["annotation_progress"] <= 100
 
         # Charts válidos
@@ -307,11 +299,13 @@ class TestGlobalDashboard:
         data = resp.json()
         rate = data["summary"]["agreement_rate"]
 
-        # Com 2 anotações:
-        # vid_alpha: a[0]=consenso, a[1]=consenso, a[2]=conflito, b[0]=conflito → 2 consenso / 4
-        # vid_beta: c[0]=consenso, c[1]=consenso → 2 consenso / 2
-        # Total: 4 consenso / 6 = 0.6667
-        assert rate == round(4 / 6, 4)
+        # Com 2 anotações (por entry):
+        # entry_a: conflito (diverge) → 0
+        # entry_b: conflito (diverge) → 0
+        # entry_c: consenso humano → 1
+        # entry_d: consenso bot → 1
+        # Total: 2 consenso / 4 = 0.5
+        assert rate == round(2 / 4, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +328,8 @@ class TestVideoDashboard:
         s = data["summary"]
         # vid_alpha tem 5 comentários coletados (3 de author_a + 2 de author_b)
         assert s["total_comments_collected"] == 5
-        assert s["total_comments_in_datasets"] == 5
+        # 2 entries (author_a + author_b)
+        assert s["total_users_in_datasets"] == 2
 
         # Charts válidos
         for key in [
@@ -367,8 +362,8 @@ class TestVideoDashboard:
         assert resp.status_code == 200
         data = resp.json()
 
-        # Apenas alpha_media_curtos tem ambos media e curtos
-        assert data["summary"]["total_comments_in_datasets"] == 2
+        # Apenas alpha_media_curtos tem ambos media e curtos (1 entry: author_b)
+        assert data["summary"]["total_users_in_datasets"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -388,13 +383,12 @@ class TestUserDashboard:
         data = resp.json()
 
         s = data["summary"]
-        # auth_as_user anotou:
-        # vid_alpha: a[0]=bot, a[1]=humano, a[2]=bot, b[0]=bot, b[1]=humano
-        # vid_beta: c[0]=humano, c[1]=bot
-        # Total: 7 anotados, bots=4, humans=3
-        assert s["total_annotated"] == 7
-        assert s["bots"] == 4
-        assert s["humans"] == 3
+        # auth_as_user (user_a) anotou por entry:
+        # entry_a=bot, entry_b=bot, entry_c=humano, entry_d=bot
+        # Total: 4 anotados, bots=3, humans=1
+        assert s["total_annotated"] == 4
+        assert s["bots"] == 3
+        assert s["humans"] == 1
         assert s["total_datasets_assigned"] == 3
         assert len(data["datasets"]) == 3
 
@@ -438,20 +432,24 @@ class TestUserDashboard:
     def test_dataset_status_correto(self, client, db, auth_as_user, admin_user):
         """Verifica status completed, in_progress e not_started."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_status")
-        comments_a = _make_comments(db, col.id, "ch_a", count=2)
-        comments_b = _make_comments(db, col.id, "ch_b", count=2)
+        _make_comments(db, col.id, "ch_a", count=2)
+        _make_comments(db, col.id, "ch_b1", count=2)
+        _make_comments(db, col.id, "ch_b2", count=2)
         _make_comments(db, col.id, "ch_c", count=2)
 
-        _make_dataset(db, col.id, auth_as_user.id, ["ch_a"], name="ds_done")
-        _make_dataset(db, col.id, auth_as_user.id, ["ch_b"], name="ds_partial")
+        ds_done, entries_done = _make_dataset(
+            db, col.id, auth_as_user.id, ["ch_a"], name="ds_done"
+        )
+        ds_partial, entries_partial = _make_dataset(
+            db, col.id, auth_as_user.id, ["ch_b1", "ch_b2"], name="ds_partial"
+        )
         _make_dataset(db, col.id, auth_as_user.id, ["ch_c"], name="ds_empty")
 
-        # ds_done: anotar todos
-        for c in comments_a:
-            _annotate(db, c, auth_as_user, "humano")
+        # ds_done: anotar todos os entries (1 entry)
+        _annotate(db, entries_done[0], auth_as_user, "humano")
 
-        # ds_partial: anotar 1 de 2
-        _annotate(db, comments_b[0], auth_as_user, "bot", "teste")
+        # ds_partial: anotar 1 de 2 entries
+        _annotate(db, entries_partial[0], auth_as_user, "bot", "teste")
 
         # ds_empty: nenhuma anotação
         db.commit()
@@ -477,17 +475,13 @@ class TestBotComments:
     def test_retorna_bots_com_concordancia(self, client, db, auth_as_user, admin_user):
         """Tabela de bots retorna concordance_pct correto."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_bots")
-        comments = _make_comments(db, col.id, "ch_bot", count=2)
-        _make_dataset(db, col.id, auth_as_user.id, ["ch_bot"])
+        _make_comments(db, col.id, "ch_bot", count=2)
+        ds, entries = _make_dataset(db, col.id, auth_as_user.id, ["ch_bot"])
+        entry = entries[0]
 
-        # Consenso bot no comment[0]
-        _annotate(db, comments[0], auth_as_user, "bot", "spam")
-        _annotate(db, comments[0], admin_user, "bot", "concordo")
-
-        # Conflito no comment[1]
-        ann_a = _annotate(db, comments[1], auth_as_user, "bot", "suspeito")
-        ann_b = _annotate(db, comments[1], admin_user, "humano")
-        _make_conflict(db, comments[1], ann_a, ann_b, status="pending")
+        # Consenso bot no entry
+        _annotate(db, entry, auth_as_user, "bot", "spam")
+        _annotate(db, entry, admin_user, "bot", "concordo")
         db.commit()
 
         resp = client.get("/dashboard/bots")
@@ -503,31 +497,18 @@ class TestBotComments:
         resp = client.get("/dashboard/bots")
         assert resp.status_code == 401
 
-    def test_filtro_por_search(self, client, db, auth_as_user, admin_user):
-        """Filtro de busca por texto do comentário."""
+    def test_filtro_por_author(self, client, db, auth_as_user, admin_user):
+        """Filtro de busca por author_display_name."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_search")
-        c = Comment(
-            collection_id=col.id,
-            comment_id="unique_search_c1",
-            author_channel_id="ch_search",
-            author_display_name="Busca User",
-            text_original="TEXTO ÚNICO PARA BUSCA",
-            like_count=0,
-            reply_count=0,
-            published_at=datetime(2024, 1, 1),
-            updated_at=datetime(2024, 1, 1),
-        )
-        db.add(c)
-        db.flush()
-        _make_dataset(db, col.id, auth_as_user.id, ["ch_search"])
-        _annotate(db, c, auth_as_user, "bot", "teste busca")
+        _make_comments(db, col.id, "ch_search", count=1)
+        ds, entries = _make_dataset(db, col.id, auth_as_user.id, ["ch_search"])
+        _annotate(db, entries[0], auth_as_user, "bot", "teste busca")
         db.commit()
 
-        resp = client.get("/dashboard/bots?search=ÚNICO PARA")
+        resp = client.get("/dashboard/bots?author=ch_search")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] >= 1
-        assert any("ÚNICO" in i["text_original"] for i in data["items"])
 
 
 # ---------------------------------------------------------------------------
@@ -611,23 +592,22 @@ class TestSeguranca:
 # ---------------------------------------------------------------------------
 
 
-class TestClassifyCommentSingleLabel:
+class TestClassifyEntrySingleLabel:
     def test_single_annotation_consensus(self, client, db, auth_as_user, admin_user):
         """1 anotacao apenas classifica pelo label unico."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_single")
-        comments = _make_comments(db, col.id, "ch_single", count=2)
-        _make_dataset(
+        _make_comments(db, col.id, "ch_single_a", count=1)
+        _make_comments(db, col.id, "ch_single_b", count=1)
+        ds, entries = _make_dataset(
             db,
             col.id,
             auth_as_user.id,
-            ["ch_single"],
+            ["ch_single_a", "ch_single_b"],
             name="ds_single",
         )
 
-        # Apenas 1 anotador classifica como bot
-        _annotate(db, comments[0], auth_as_user, "bot", "unico")
-        # Apenas 1 anotador classifica como humano
-        _annotate(db, comments[1], auth_as_user, "humano")
+        _annotate(db, entries[0], auth_as_user, "bot", "unico")
+        _annotate(db, entries[1], auth_as_user, "humano")
         db.commit()
 
         resp = client.get("/dashboard/global")
@@ -677,20 +657,20 @@ class TestGlobalDatasetNoComments:
         assert data["summary"]["total_datasets_assigned"] == 0
 
 
-class TestBotCommentsFilters:
+class TestBotUsersFilters:
     def test_filter_by_dataset_id(self, client, db, auth_as_user, admin_user):
         """Filtro por dataset_id retorna apenas bots daquele ds."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_filt_ds")
-        comments_a = _make_comments(db, col.id, "ch_fa", count=2)
-        comments_b = _make_comments(db, col.id, "ch_fb", count=2)
-        ds_a = _make_dataset(
+        _make_comments(db, col.id, "ch_fa", count=2)
+        _make_comments(db, col.id, "ch_fb", count=2)
+        ds_a, entries_a = _make_dataset(
             db,
             col.id,
             auth_as_user.id,
             ["ch_fa"],
             name="ds_filt_a",
         )
-        _make_dataset(
+        ds_b, entries_b = _make_dataset(
             db,
             col.id,
             auth_as_user.id,
@@ -698,8 +678,8 @@ class TestBotCommentsFilters:
             name="ds_filt_b",
         )
 
-        _annotate(db, comments_a[0], auth_as_user, "bot", "spam")
-        _annotate(db, comments_b[0], auth_as_user, "bot", "spam")
+        _annotate(db, entries_a[0], auth_as_user, "bot", "spam")
+        _annotate(db, entries_b[0], auth_as_user, "bot", "spam")
         db.commit()
 
         resp = client.get(f"/dashboard/bots?dataset_id={ds_a.id}")
@@ -711,15 +691,15 @@ class TestBotCommentsFilters:
     def test_filter_by_video_id(self, client, db, auth_as_user):
         """Filtro por video_id retorna bots daquele video."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_filt_vid")
-        comments = _make_comments(db, col.id, "ch_fv", count=2)
-        _make_dataset(
+        _make_comments(db, col.id, "ch_fv", count=2)
+        ds, entries = _make_dataset(
             db,
             col.id,
             auth_as_user.id,
             ["ch_fv"],
             name="ds_fv",
         )
-        _annotate(db, comments[0], auth_as_user, "bot", "teste")
+        _annotate(db, entries[0], auth_as_user, "bot", "teste")
         db.commit()
 
         resp = client.get("/dashboard/bots?video_id=vid_filt_vid")
@@ -729,15 +709,15 @@ class TestBotCommentsFilters:
     def test_filter_by_author(self, client, db, auth_as_user):
         """Filtro por author busca por display name."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_filt_auth")
-        comments = _make_comments(db, col.id, "ch_auth_filt", count=2)
-        _make_dataset(
+        _make_comments(db, col.id, "ch_auth_filt", count=2)
+        ds, entries = _make_dataset(
             db,
             col.id,
             auth_as_user.id,
             ["ch_auth_filt"],
             name="ds_auth_filt",
         )
-        _annotate(db, comments[0], auth_as_user, "bot", "teste")
+        _annotate(db, entries[0], auth_as_user, "bot", "teste")
         db.commit()
 
         resp = client.get("/dashboard/bots?author=ch_auth_filt")
@@ -747,8 +727,8 @@ class TestBotCommentsFilters:
     def test_filter_by_criteria(self, client, db, auth_as_user):
         """Filtro por criteria retorna bots de datasets com aquele criterio."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_filt_crit")
-        comments = _make_comments(db, col.id, "ch_crit", count=2)
-        _make_dataset(
+        _make_comments(db, col.id, "ch_crit", count=2)
+        ds, entries = _make_dataset(
             db,
             col.id,
             auth_as_user.id,
@@ -756,7 +736,7 @@ class TestBotCommentsFilters:
             criteria=["intervalo"],
             name="ds_crit",
         )
-        _annotate(db, comments[0], auth_as_user, "bot", "teste")
+        _annotate(db, entries[0], auth_as_user, "bot", "teste")
         db.commit()
 
         resp = client.get("/dashboard/bots?criteria=intervalo")
@@ -871,7 +851,8 @@ class TestEmptyAuthorSetSkip:
         resp = client.get("/dashboard/global")
         assert resp.status_code == 200
         s = resp.json()["summary"]
-        assert s["total_comments_in_datasets"] == 0
+        # Entry existe mas sem comentários — ainda conta como usuário no dataset
+        assert s["total_users_in_datasets"] == 1
 
 
 class TestBotRateByCriteriaEmptyCids:
@@ -906,14 +887,14 @@ class TestBotRateByCriteriaEmptyCids:
         _assert_valid_plotly_json(resp.json()["bot_rate_by_criteria_chart"])
 
 
-class TestClassifyCommentMultiLabelNoConflict:
+class TestClassifyEntryMultiLabelNoConflict:
     def test_divergent_labels_without_conflict_returns_none(
         self, client, db, auth_as_user, admin_user
     ):
         """Anotacoes divergentes sem AnnotationConflict: classificacao None."""
         col = _make_collection(db, auth_as_user.id, video_id="vid_noconf")
-        comments = _make_comments(db, col.id, "ch_noconf", count=1)
-        _make_dataset(
+        _make_comments(db, col.id, "ch_noconf", count=1)
+        ds, entries = _make_dataset(
             db,
             col.id,
             auth_as_user.id,
@@ -923,13 +904,13 @@ class TestClassifyCommentMultiLabelNoConflict:
 
         # Inserir anotacoes divergentes SEM conflito
         ann_a = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entries[0].id,
             annotator_id=auth_as_user.id,
             label="bot",
             justificativa="suspeito",
         )
         ann_b = Annotation(
-            comment_id=comments[0].id,
+            dataset_entry_id=entries[0].id,
             annotator_id=admin_user.id,
             label="humano",
         )
@@ -938,8 +919,7 @@ class TestClassifyCommentMultiLabelNoConflict:
 
         resp = client.get("/dashboard/global")
         assert resp.status_code == 200
-        # O comentario nao eh classificado (None)
-        # Total de bots e humanos nao inclui este caso
+        # O entry nao eh classificado (None)
         s = resp.json()["summary"]
         assert s["total_bots"] == 0
         assert s["total_humans"] == 0

@@ -144,11 +144,11 @@ export function AnnotatePage() {
   );
 
   const handleAnnotate = useCallback(
-    async (commentDbId: string, label: "bot" | "humano", justificativa?: string | null) => {
-      const result = await submitAnnotation(commentDbId, label, justificativa);
+    async (entryId: string, label: "bot" | "humano", justificativa?: string | null) => {
+      const result = await submitAnnotation(entryId, label, justificativa);
       if (result?.conflict_created) {
         setToast(
-          "Conflito detectado: outro pesquisador classificou este comentário de forma diferente."
+          "Conflito detectado: outro pesquisador classificou este usuário de forma diferente."
         );
         setTimeout(() => setToast(null), 5000);
       }
@@ -176,7 +176,7 @@ export function AnnotatePage() {
             dataset_name?: string;
             video_id?: string;
             annotations?: Array<{
-              comment_db_id: string;
+              entry_id: string;
               label: "bot" | "humano";
               justificativa?: string | null;
             }>;
@@ -210,10 +210,10 @@ export function AnnotatePage() {
 
       <main className="flex-1 px-8 py-9 max-w-6xl w-full mx-auto">
         <h1 className="text-2xl font-bold text-gray-800 tracking-tight mb-1">
-          Anotação de Comentários
+          Anotação de Usuários
         </h1>
         <p className="text-sm text-gray-500 mb-6">
-          Classifique cada comentário como bot ou humano. Veja todos os comentários do usuário para
+          Classifique cada usuário como bot ou humano. Analise todos os comentários do autor para
           tomar uma decisão informada.
         </p>
 
@@ -359,11 +359,12 @@ export function AnnotatePage() {
                     },
                     {
                       label: "Escolha um usuário",
-                      description: "Veja todos os comentários do usuário agrupados para contexto.",
+                      description: "Veja todos os comentários do autor como evidência.",
                     },
                     {
-                      label: "Classifique cada comentário",
-                      description: 'Marque como "Bot" ou "Humano". Bot exige justificativa.',
+                      label: "Classifique o usuário",
+                      description:
+                        'Marque o autor como "Bot" ou "Humano". Bot exige justificativa.',
                     },
                   ]}
                 />
@@ -394,7 +395,7 @@ export function AnnotatePage() {
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="text-sm font-semibold text-gray-700">Meu progresso</h3>
                       <span className="text-xs text-gray-500">
-                        {datasetProgress.annotated}/{datasetProgress.total_comments} comentários
+                        {datasetProgress.annotated}/{datasetProgress.total_users} usuários
                       </span>
                     </div>
                     <ProgressBar
@@ -480,7 +481,7 @@ export function AnnotatePage() {
                             Comentários
                           </th>
                           <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                            Progresso
+                            Classificação
                           </th>
                           <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-400">
                             Status
@@ -488,50 +489,51 @@ export function AnnotatePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {datasetUsers.items.map((item) => {
-                          const pct =
-                            item.comment_count > 0
-                              ? Math.round((item.my_annotated_count / item.comment_count) * 100)
-                              : 0;
-                          const done = item.my_pending_count === 0;
-                          return (
-                            <tr
-                              key={item.entry_id}
-                              className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
-                              onClick={() => handleSelectUser(item.entry_id)}
-                            >
-                              <td className="px-6 py-3">
-                                <p className="text-sm font-medium text-gray-800">
-                                  {item.author_display_name}
-                                </p>
-                                <p className="text-[11px] text-gray-400 font-mono">
-                                  {item.author_channel_id.slice(0, 20)}...
-                                </p>
-                              </td>
-                              <td className="px-6 py-3 text-sm text-gray-600">
-                                {item.comment_count}
-                              </td>
-                              <td className="px-6 py-3 w-36">
-                                <ProgressBar percent={pct} size="sm" />
-                                <span className="text-[10px] text-gray-400">
-                                  {item.my_annotated_count}/{item.comment_count}
-                                </span>
-                              </td>
-                              <td className="px-6 py-3">
+                        {datasetUsers.items.map((item) => (
+                          <tr
+                            key={item.entry_id}
+                            className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                            onClick={() => handleSelectUser(item.entry_id)}
+                          >
+                            <td className="px-6 py-3">
+                              <p className="text-sm font-medium text-gray-800">
+                                {item.author_display_name}
+                              </p>
+                              <p className="text-[11px] text-gray-400 font-mono">
+                                {item.author_channel_id.slice(0, 20)}...
+                              </p>
+                            </td>
+                            <td className="px-6 py-3 text-sm text-gray-600">
+                              {item.comment_count}
+                            </td>
+                            <td className="px-6 py-3">
+                              {item.my_label ? (
                                 <span
                                   className={[
                                     "text-[11px] font-semibold px-2.5 py-0.5 rounded-full",
-                                    done
-                                      ? "bg-green-50 text-green-600"
-                                      : "bg-yellow-50 text-yellow-600",
+                                    item.my_label === "bot"
+                                      ? "bg-red-50 text-red-600"
+                                      : "bg-green-50 text-green-600",
                                   ].join(" ")}
                                 >
-                                  {done ? "Concluído" : `${item.my_pending_count} pendentes`}
+                                  {item.my_label === "bot" ? "Bot" : "Humano"}
                                 </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                              ) : null}
+                            </td>
+                            <td className="px-6 py-3">
+                              <span
+                                className={[
+                                  "text-[11px] font-semibold px-2.5 py-0.5 rounded-full",
+                                  item.is_annotated_by_me
+                                    ? "bg-green-50 text-green-600"
+                                    : "bg-yellow-50 text-yellow-600",
+                                ].join(" ")}
+                              >
+                                {item.is_annotated_by_me ? "Concluído" : "Pendente"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
 
@@ -588,7 +590,7 @@ export function AnnotatePage() {
                 </code>{" "}
                 contendo um array de objetos com{" "}
                 <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">
-                  comment_db_id
+                  entry_id
                 </code>
                 ,{" "}
                 <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">
@@ -685,7 +687,7 @@ export function AnnotatePage() {
                           {p.dataset_name}
                         </td>
                         <td className="px-6 py-3 text-sm text-gray-600">
-                          {p.annotated}/{p.total_comments}
+                          {p.annotated}/{p.total_users}
                         </td>
                         <td className="px-6 py-3">
                           <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
@@ -709,7 +711,7 @@ export function AnnotatePage() {
                           {p.dataset_name}
                         </td>
                         <td className="px-6 py-3 text-sm text-gray-600">
-                          {p.annotated}/{p.total_comments}
+                          {p.annotated}/{p.total_users}
                         </td>
                         <td className="px-6 py-3">
                           <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
