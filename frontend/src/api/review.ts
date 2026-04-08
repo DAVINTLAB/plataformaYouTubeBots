@@ -4,11 +4,12 @@ import { API_URL, ApiError, request } from "./http";
 
 export interface ConflictListItem {
   conflict_id: string;
-  comment_id: string;
+  entry_id: string;
   dataset_id: string;
   dataset_name: string;
   author_display_name: string;
-  text_original: string;
+  author_channel_id: string;
+  comment_count: number;
   label_a: string;
   annotator_a: string;
   justificativa_a: string | null;
@@ -62,11 +63,11 @@ export interface BotAnnotationDetail {
   justificativa: string | null;
 }
 
-export interface BotCommentItem {
-  comment_db_id: string;
-  text_original: string;
+export interface BotUserItem {
+  entry_id: string;
   author_display_name: string;
   author_channel_id: string;
+  comment_count: number;
   dataset_id: string;
   dataset_name: string;
   annotations: BotAnnotationDetail[];
@@ -139,7 +140,7 @@ export const reviewApi = {
     if (params?.dataset_id) qs.set("dataset_id", params.dataset_id);
     qs.set("page", String(params?.page ?? 1));
     qs.set("page_size", String(params?.page_size ?? 20));
-    return request<PaginatedResponse<BotCommentItem>>(`/review/bots?${qs}`, {}, token);
+    return request<PaginatedResponse<BotUserItem>>(`/review/bots?${qs}`, {}, token);
   },
 
   stats: (token: string) => request<ReviewStats>("/review/stats", {}, token),
@@ -148,11 +149,10 @@ export const reviewApi = {
     data: {
       dataset_name: string;
       video_id: string;
-      comments: Array<{
-        comment_db_id: string;
+      users: Array<{
+        entry_id: string;
         author_channel_id: string;
         author_display_name: string;
-        text_original: string;
         final_label: "bot" | "humano";
         annotations?: Array<{
           annotator: string;
@@ -170,7 +170,7 @@ export const reviewApi = {
     onProgress?: (sent: number, total: number) => void
   ): Promise<ImportResult> => {
     const CHUNK_SIZE = 2000;
-    const all = data.comments;
+    const all = data.users;
     const total = all.length;
     const firstBatch = all.slice(0, CHUNK_SIZE);
     const hasMore = total > CHUNK_SIZE;
@@ -181,7 +181,7 @@ export const reviewApi = {
         method: "POST",
         body: JSON.stringify({
           ...data,
-          comments: firstBatch,
+          users: firstBatch,
           done: !hasMore,
         }),
       },
@@ -205,7 +205,7 @@ export const reviewApi = {
         "/review/import-chunk",
         {
           method: "POST",
-          body: JSON.stringify({ comments: chunk, done: isLast }),
+          body: JSON.stringify({ users: chunk, done: isLast }),
         },
         token
       );
@@ -238,7 +238,6 @@ export const reviewApi = {
       throw new ApiError(body.detail ?? "Erro ao exportar revisão.", res.status);
     }
 
-    // Use filename from Content-Disposition if available
     const cd = res.headers.get("Content-Disposition") ?? "";
     const filenameMatch = cd.match(/filename="(.+?)"/);
     const filename = filenameMatch ? filenameMatch[1] : `review.${format}`;

@@ -83,35 +83,27 @@ export function useAnnotate() {
 
   const submitAnnotation = useCallback(
     async (
-      commentDbId: string,
+      entryId: string,
       label: "bot" | "humano",
       justificativa?: string | null
     ): Promise<AnnotationResult | undefined> => {
       if (!token) return;
       try {
-        const result = await annotateApi.submit(
-          { comment_db_id: commentDbId, label, justificativa },
-          token
-        );
+        const result = await annotateApi.submit({ entry_id: entryId, label, justificativa }, token);
 
-        // Atualizar o comentário no state local
+        // Atualizar a anotação no state local (nível do entry)
         setState((s) => {
           if (!s.userComments) return s;
-          const updated = s.userComments.comments.map((c) =>
-            c.comment_db_id === commentDbId
-              ? {
-                  ...c,
-                  my_annotation: {
-                    label,
-                    justificativa: justificativa ?? null,
-                    annotated_at: new Date().toISOString(),
-                  },
-                }
-              : c
-          );
           return {
             ...s,
-            userComments: { ...s.userComments, comments: updated },
+            userComments: {
+              ...s.userComments,
+              my_annotation: {
+                label,
+                justificativa: justificativa ?? null,
+                annotated_at: new Date().toISOString(),
+              },
+            },
           };
         });
 
@@ -158,7 +150,7 @@ export function useAnnotate() {
       dataset_name?: string;
       video_id?: string;
       annotations: Array<{
-        comment_db_id: string;
+        entry_id: string;
         label: "bot" | "humano";
         justificativa?: string | null;
       }>;

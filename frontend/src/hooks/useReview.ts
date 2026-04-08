@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   reviewApi,
-  BotCommentItem,
+  BotUserItem,
   ConflictDetail,
   ConflictListItem,
   ImportResult,
@@ -15,7 +15,7 @@ interface ReviewState {
   error: string | null;
   conflictsData: PaginatedResponse<ConflictListItem> | null;
   conflictDetail: ConflictDetail | null;
-  botsData: PaginatedResponse<BotCommentItem> | null;
+  botsData: PaginatedResponse<BotUserItem> | null;
   stats: ReviewStats | null;
   importResult: ImportResult | null;
 }
@@ -97,7 +97,6 @@ export function useReview() {
           token
         );
 
-        // Update conflict in local state
         setState((s) => ({
           ...s,
           conflictsData: s.conflictsData

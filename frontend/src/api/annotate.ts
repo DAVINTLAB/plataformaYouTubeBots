@@ -7,16 +7,15 @@ export interface UserItem {
   author_channel_id: string;
   author_display_name: string;
   comment_count: number;
-  my_annotated_count: number;
-  my_pending_count: number;
+  is_annotated_by_me: boolean;
+  my_label: string | null;
 }
 
 export interface DatasetUsersResponse {
   dataset_id: string;
   dataset_name: string;
   total_users: number;
-  total_comments: number;
-  annotated_comments_by_me: number;
+  annotated_users_by_me: number;
   page: number;
   page_size: number;
   total_pages: number;
@@ -36,26 +35,26 @@ export interface AnnotatorAnnotation {
   annotated_at: string;
 }
 
-export interface CommentWithAnnotation {
+export interface CommentItem {
   comment_db_id: string;
   text_original: string;
   like_count: number;
   reply_count: number;
   published_at: string;
-  my_annotation: MyAnnotation | null;
-  all_annotations?: AnnotatorAnnotation[] | null;
 }
 
 export interface UserCommentsResponse {
   entry_id: string;
   author_display_name: string;
   author_channel_id: string;
-  comments: CommentWithAnnotation[];
+  comments: CommentItem[];
+  my_annotation: MyAnnotation | null;
+  all_annotations?: AnnotatorAnnotation[] | null;
 }
 
 export interface AnnotationResult {
   annotation_id: string;
-  comment_db_id: string;
+  entry_id: string;
   label: string;
   conflict_created: boolean;
 }
@@ -63,7 +62,7 @@ export interface AnnotationResult {
 export interface DatasetProgress {
   dataset_id: string;
   dataset_name: string;
-  total_comments: number;
+  total_users: number;
   annotated: number;
   bots: number;
   humans: number;
@@ -82,7 +81,7 @@ export interface AnnotatorProgress {
   annotator_name: string;
   dataset_id: string;
   dataset_name: string;
-  total_comments: number;
+  total_users: number;
   annotated: number;
   bots: number;
   humans: number;
@@ -111,7 +110,7 @@ export const annotateApi = {
 
   submit: (
     data: {
-      comment_db_id: string;
+      entry_id: string;
       label: "bot" | "humano";
       justificativa?: string | null;
     },
@@ -129,7 +128,7 @@ export const annotateApi = {
       dataset_name?: string;
       video_id?: string;
       annotations: Array<{
-        comment_db_id: string;
+        entry_id: string;
         label: "bot" | "humano";
         justificativa?: string | null;
       }>;
