@@ -613,3 +613,520 @@ class TestDeleteDatasetEndpoint:
     def test_deleta_dataset_inexistente_retorna_404(self, client, auth_as_user):
         resp = client.delete(f"/clean/datasets/{uuid.uuid4()}")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Testes unitários adicionais — cobertura 100%
+# ---------------------------------------------------------------------------
+
+
+class TestIdenticalSelector:
+    def test_constructor_e_select_vazio(self, db):
+        """IdenticalSelector com user_comments vazio retorna set vazio."""
+        from services.clean.identical import IdenticalSelector
+
+        selector = IdenticalSelector(db=db, collection_id=str(uuid.uuid4()))
+        assert selector.select({}) == set()
+
+    def test_select_detecta_texto_identico_em_outra_coleta(self, db, admin_user):
+        """Detecta texto duplicado entre coletas diferentes."""
+        from services.clean.identical import IdenticalSelector
+
+        # Coleta 1
+        col1 = Collection(
+            video_id="vid_A",
+            status="completed",
+            collected_by=admin_user.id,
+            total_comments=1,
+        )
+        db.add(col1)
+        db.flush()
+
+        c1 = Comment(
+            collection_id=col1.id,
+            comment_id="c1",
+            author_channel_id="UC_dup",
+            author_display_name="Dup",
+            text_original="texto repetido",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 1, 1),
+            updated_at=datetime(2024, 1, 1),
+        )
+        db.add(c1)
+        db.flush()
+
+        # Coleta 2
+        col2 = Collection(
+            video_id="vid_B",
+            status="completed",
+            collected_by=admin_user.id,
+            total_comments=1,
+        )
+        db.add(col2)
+        db.flush()
+
+        c2 = Comment(
+            collection_id=col2.id,
+            comment_id="c2",
+            author_channel_id="UC_dup",
+            author_display_name="Dup",
+            text_original="texto repetido",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 1, 2),
+            updated_at=datetime(2024, 1, 2),
+        )
+        db.add(c2)
+        db.commit()
+
+        user_comments = {"UC_dup": [c1]}
+        selector = IdenticalSelector(db=db, collection_id=str(col1.id))
+        selected = selector.select(user_comments)
+        assert "UC_dup" in selected
+
+    def test_select_sem_match_em_outras_coletas(self, db, admin_user):
+        """Sem texto repetido em outra coleta, ninguem selecionado."""
+        from services.clean.identical import IdenticalSelector
+
+        col = Collection(
+            video_id="vid_solo",
+            status="completed",
+            collected_by=admin_user.id,
+            total_comments=1,
+        )
+        db.add(col)
+        db.flush()
+
+        c = Comment(
+            collection_id=col.id,
+            comment_id="c_solo",
+            author_channel_id="UC_solo",
+            author_display_name="Solo",
+            text_original="texto unico",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 1, 1),
+            updated_at=datetime(2024, 1, 1),
+        )
+        db.add(c)
+        db.commit()
+
+        user_comments = {"UC_solo": [c]}
+        selector = IdenticalSelector(db=db, collection_id=str(col.id))
+        selected = selector.select(user_comments)
+        assert selected == set()
+
+
+class TestProfileSelectorEdgeCases:
+    def test_empty_input_retorna_vazio(self):
+        """ProfileSelector com input vazio retorna set vazio."""
+        from services.clean.profile import ProfileSelector
+
+        assert ProfileSelector().select({}) == set()
+
+    def test_naive_timezone_handling(self):
+        """Datetime naive recebe UTC antes de comparar."""
+        from services.clean.profile import ProfileSelector
+
+        c = Comment(
+            id=uuid.uuid4(),
+            collection_id=uuid.uuid4(),
+            comment_id="tz_test",
+            author_channel_id="UC_tz",
+            author_display_name="TZ",
+            text_original="hi",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 1, 1),
+            updated_at=datetime(2024, 1, 1),
+            # Canal criado ontem — naive datetime
+            author_channel_published_at=datetime(2024, 1, 1),
+            author_profile_image_url="https://normal.com/pic.jpg",
+        )
+        user_comments = {"UC_tz": [c]}
+        # Canal antigo, nao recente — nao deve ser selecionado
+        selected = ProfileSelector().select(user_comments)
+        assert "UC_tz" not in selected
+
+    def test_or_logic_default_avatar_ou_canal_recente(self):
+        """Basta avatar padrao OU canal recente para selecionar."""
+        from datetime import UTC
+
+        from services.clean.profile import ProfileSelector
+
+        # Apenas avatar padrao
+        c1 = Comment(
+            id=uuid.uuid4(),
+            collection_id=uuid.uuid4(),
+            comment_id="avatar_test",
+            author_channel_id="UC_avatar",
+            author_display_name="Avatar",
+            text_original="hi",
+            like_count=0,
+            reply_count=0,
+            published_at=datetime(2024, 1, 1),
+            updated_at=datetime(2024, 1, 1),
+            author_profile_image_url=("https://yt4.ggpht.com/a/default-user=s48"),
+            author_channel_published_at=datetime(2020, 1, 1, tzinfo=UTC),
+        )
+        user_comments = {"UC_avatar": [c1]}
+        selected = ProfileSelector().select(user_comments)
+        assert "UC_avatar" in selected
+
+
+class TestShortCommentsSelectorEmpty:
+    def test_empty_comments_list_skip(self):
+        """Usuarios com lista vazia de comentarios sao ignorados."""
+        selector = ShortCommentsSelector(threshold_chars=20)
+        user_comments = {"UC_empty": []}
+        selected = selector.select(user_comments)
+        assert "UC_empty" not in selected
+
+
+class TestCentralMeasureSelectorEmpty:
+    def test_user_counts_vazio_retorna_vazio(self):
+        """CentralMeasureSelector com input vazio retorna set vazio."""
+        selector = MeanSelector()
+        assert selector.select({}) == set()
+
+
+class TestComputeCentralMeasuresSmallSample:
+    def test_q1_q3_com_menos_de_4_valores(self):
+        """Com <4 valores, Q1=min e Q3=max."""
+        m = compute_central_measures({"A": 5, "B": 10})
+        assert m["iqr_lower"] == 5.0
+        assert m["iqr_upper"] == 10.0
+
+
+class TestGroupByUserExcludeChannel:
+    def test_exclui_video_channel_id(self):
+        """Comentarios do dono do canal sao excluidos."""
+        comments = _make_comments({"OWNER": 5, "A": 3})
+        groups = group_by_user(comments, exclude_channel_id="OWNER")
+        assert "OWNER" not in groups
+        assert "A" in groups
+
+
+class TestBuildSelectorAllCases:
+    def test_all_selectors_and_unknown(self, db):
+        """Testa todos os cases do _build_selector."""
+        from services.clean.service import _build_selector
+
+        s = _build_selector(
+            "percentil",
+            threshold_chars=20,
+            threshold_seconds=30,
+        )
+        assert isinstance(s, PercentileSelector)
+
+        s = _build_selector(
+            "media",
+            threshold_chars=20,
+            threshold_seconds=30,
+        )
+        assert isinstance(s, MeanSelector)
+
+        s = _build_selector(
+            "moda",
+            threshold_chars=20,
+            threshold_seconds=30,
+        )
+        from services.clean.mode import ModeSelector as MS
+
+        assert isinstance(s, MS)
+
+        s = _build_selector(
+            "mediana",
+            threshold_chars=20,
+            threshold_seconds=30,
+        )
+        assert isinstance(s, MedianSelector)
+
+        s = _build_selector(
+            "curtos",
+            threshold_chars=42,
+            threshold_seconds=30,
+        )
+        assert isinstance(s, ShortCommentsSelector)
+        assert s.threshold_chars == 42
+
+        s = _build_selector(
+            "intervalo",
+            threshold_chars=20,
+            threshold_seconds=99,
+        )
+        assert isinstance(s, TimeIntervalSelector)
+        assert s.threshold_seconds == 99
+
+        from services.clean.identical import IdenticalSelector
+
+        s = _build_selector(
+            "identicos",
+            threshold_chars=20,
+            threshold_seconds=30,
+            db=db,
+            collection_id=uuid.uuid4(),
+        )
+        assert isinstance(s, IdenticalSelector)
+
+        from services.clean.profile import ProfileSelector
+
+        s = _build_selector(
+            "perfil",
+            threshold_chars=20,
+            threshold_seconds=30,
+        )
+        assert isinstance(s, ProfileSelector)
+
+        with pytest.raises(ValueError, match="desconhecido"):
+            _build_selector(
+                "invalido",
+                threshold_chars=20,
+                threshold_seconds=30,
+            )
+
+
+class TestPreviewThresholdOutputs:
+    def test_preview_curtos_inclui_threshold_chars(
+        self, client, auth_as_user, completed_collection
+    ):
+        """Preview com criterio 'curtos' inclui threshold_chars."""
+        resp = client.get(
+            "/clean/preview",
+            params={
+                "collection_id": str(completed_collection.id),
+                "criteria": "curtos",
+                "threshold_chars": 50,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        entry = data["by_criteria"]["curtos"]
+        assert entry["threshold_chars"] == 50
+
+    def test_preview_intervalo_inclui_threshold_seconds(
+        self, client, auth_as_user, completed_collection
+    ):
+        """Preview com criterio 'intervalo' inclui threshold_seconds."""
+        resp = client.get(
+            "/clean/preview",
+            params={
+                "collection_id": str(completed_collection.id),
+                "criteria": "intervalo",
+                "threshold_seconds": 120,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        entry = data["by_criteria"]["intervalo"]
+        assert entry["threshold_seconds"] == 120
+
+
+# ---------------------------------------------------------------------------
+# Testes de integração — Import de dataset
+# ---------------------------------------------------------------------------
+
+
+class TestImportDatasetEndpoint:
+    def test_import_dataset_valido(self, client, auth_as_user, completed_collection):
+        """Import de dataset com video_id valido cria dataset."""
+        resp = client.post(
+            "/clean/import",
+            json={
+                "dataset": {
+                    "name": "imported_ds",
+                    "video_id": "dQw4w9WgXcQ",
+                    "criteria_applied": ["percentil"],
+                },
+                "users": [
+                    {
+                        "author_channel_id": "A",
+                        "author_display_name": "User A",
+                        "comment_count": 10,
+                        "matched_criteria": ["percentil"],
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "imported_ds"
+        assert data["total_users_selected"] == 1
+
+    def test_import_dataset_video_id_inexistente_404(self, client, auth_as_user):
+        """Import com video_id sem coleta concluida retorna 404."""
+        resp = client.post(
+            "/clean/import",
+            json={
+                "dataset": {
+                    "name": "ds_fail",
+                    "video_id": "INEXISTENTE",
+                    "criteria_applied": ["media"],
+                },
+                "users": [
+                    {
+                        "author_channel_id": "X",
+                        "comment_count": 1,
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 404
+
+    def test_import_dataset_coleta_nao_concluida_404(
+        self, client, db, auth_as_user, admin_user
+    ):
+        """Import com coleta nao concluida retorna 404."""
+        running = Collection(
+            video_id="running_vid",
+            status="running",
+            collected_by=admin_user.id,
+        )
+        db.add(running)
+        db.commit()
+
+        resp = client.post(
+            "/clean/import",
+            json={
+                "dataset": {
+                    "name": "ds_running",
+                    "video_id": "running_vid",
+                    "criteria_applied": [],
+                },
+                "users": [
+                    {
+                        "author_channel_id": "X",
+                        "comment_count": 1,
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 404
+
+    def test_import_dataset_nome_duplicado_409(
+        self, client, auth_as_user, completed_collection
+    ):
+        """Import com nome de dataset ja existente retorna 409."""
+        client.post(
+            "/clean/import",
+            json={
+                "dataset": {
+                    "name": "dup_name",
+                    "video_id": "dQw4w9WgXcQ",
+                    "criteria_applied": [],
+                },
+                "users": [
+                    {
+                        "author_channel_id": "A",
+                        "comment_count": 1,
+                    },
+                ],
+            },
+        )
+        resp = client.post(
+            "/clean/import",
+            json={
+                "dataset": {
+                    "name": "dup_name",
+                    "video_id": "dQw4w9WgXcQ",
+                    "criteria_applied": [],
+                },
+                "users": [
+                    {
+                        "author_channel_id": "B",
+                        "comment_count": 1,
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 409
+
+
+class TestImportDatasetChunkEndpoint:
+    def test_import_chunk_adiciona_usuarios(
+        self, client, auth_as_user, completed_collection
+    ):
+        """Import-chunk adiciona usuarios a dataset existente."""
+        # Criar dataset via import
+        create_resp = client.post(
+            "/clean/import",
+            json={
+                "dataset": {
+                    "name": "chunk_ds",
+                    "video_id": "dQw4w9WgXcQ",
+                    "criteria_applied": ["media"],
+                },
+                "users": [
+                    {
+                        "author_channel_id": "A",
+                        "comment_count": 5,
+                    },
+                ],
+            },
+        )
+        ds_id = create_resp.json()["dataset_id"]
+
+        resp = client.post(
+            "/clean/import-chunk",
+            json={
+                "dataset_id": ds_id,
+                "users": [
+                    {
+                        "author_channel_id": "B",
+                        "author_display_name": "User B",
+                        "comment_count": 3,
+                        "matched_criteria": ["media"],
+                    },
+                ],
+                "done": True,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_users"] == 2
+        assert data["chunk_received"] == 1
+        assert data["done"] is True
+
+    def test_import_chunk_dataset_inexistente_404(self, client, auth_as_user):
+        """Import-chunk com dataset_id inexistente retorna 404."""
+        resp = client.post(
+            "/clean/import-chunk",
+            json={
+                "dataset_id": str(uuid.uuid4()),
+                "users": [
+                    {
+                        "author_channel_id": "X",
+                        "comment_count": 1,
+                    },
+                ],
+                "done": False,
+            },
+        )
+        assert resp.status_code == 404
+
+
+# -------------------------------------------------------------------
+# Cobertura adicional — identical.py branch not texts
+# -------------------------------------------------------------------
+
+
+class TestIdenticalSelectorEmptyTexts:
+    def test_user_with_empty_comment_list_skipped(self, db, admin_user):
+        """Usuario com lista de comentarios vazia e ignorado."""
+        from services.clean.identical import IdenticalSelector
+
+        col = Collection(
+            video_id="vid_empty_txt",
+            status="completed",
+            collected_by=admin_user.id,
+            total_comments=0,
+        )
+        db.add(col)
+        db.commit()
+
+        # Lista vazia de comments gera texts vazio
+        user_comments: dict[str, list[Comment]] = {"UC_empty_txt": []}
+        selector = IdenticalSelector(db=db, collection_id=str(col.id))
+        selected = selector.select(user_comments)
+        assert "UC_empty_txt" not in selected

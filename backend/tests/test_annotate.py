@@ -598,3 +598,315 @@ class TestExport:
         lines = resp.text.strip().split("\n")
         assert lines[0] == "comment_db_id,label,justificativa"
         assert len(lines) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Testes adicionais — cobertura 100%
+# ---------------------------------------------------------------------------
+
+
+class TestAdminCannotAnnotate:
+    def test_admin_post_annotate_retorna_403(self, client, auth_as_admin, setup_data):
+        """Admin nao pode anotar — apenas revisar conflitos."""
+        comment = setup_data["comments"][0]
+        resp = client.post(
+            "/annotate",
+            json={
+                "comment_db_id": str(comment.id),
+                "label": "humano",
+            },
+        )
+        assert resp.status_code == 403
+        assert "administradores" in resp.json()["detail"].lower()
+
+
+class TestListDatasetUsersAdmin:
+    def test_admin_ve_todas_anotacoes(
+        self,
+        client,
+        db,
+        auth_as_admin,
+        admin_user,
+        regular_user,
+        setup_data,
+    ):
+        """Admin ve contagem de anotacoes de todos."""
+        from models.annotation import Annotation
+
+        comment = setup_data["comments"][0]
+        # Criar anotacao como regular_user diretamente no DB
+        ann = Annotation(
+            comment_id=comment.id,
+            annotator_id=regular_user.id,
+            label="humano",
+        )
+        db.add(ann)
+        db.commit()
+
+        ds = setup_data["dataset"]
+        resp = client.get(f"/annotate/users?dataset_id={ds.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Admin ve total_annotated global (1 anotacao)
+        assert data["annotated_comments_by_me"] == 1
+
+
+class TestListDatasetUsersFilters:
+    def test_only_pending_filter(self, client, auth_as_user, setup_data):
+        """Filtro only_pending retorna apenas usuarios pendentes."""
+        ds = setup_data["dataset"]
+        comment = setup_data["comments"][0]
+
+        # Anotar 1 de 3 comentarios
+        client.post(
+            "/annotate",
+            json={
+                "comment_db_id": str(comment.id),
+                "label": "humano",
+            },
+        )
+
+        resp = client.get(f"/annotate/users?dataset_id={ds.id}" "&only_pending=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Ainda ha pendencias
+        for item in data["items"]:
+            assert item["my_pending_count"] > 0
+
+    def test_pending_first_ordering(self, client, auth_as_user, setup_data):
+        """Filtro pending_first ordena por pendencias desc."""
+        ds = setup_data["dataset"]
+        resp = client.get(f"/annotate/users?dataset_id={ds.id}" "&pending_first=true")
+        assert resp.status_code == 200
+        assert len(resp.json()["items"]) >= 1
+
+
+class TestGetEntryCommentsAdmin:
+    def test_admin_ve_all_annotations(
+        self,
+        client,
+        db,
+        auth_as_admin,
+        admin_user,
+        regular_user,
+        setup_data,
+    ):
+        """Admin ve all_annotations com nomes dos anotadores."""
+        from models.annotation import Annotation
+
+        comment = setup_data["comments"][0]
+        ann = Annotation(
+            comment_id=comment.id,
+            annotator_id=regular_user.id,
+            label="humano",
+        )
+        db.add(ann)
+        db.commit()
+
+        ds = setup_data["dataset"]
+        entry = db.query(DatasetEntry).filter_by(dataset_id=ds.id).first()
+        resp = client.get(f"/annotate/comments/{entry.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        annotated = [c for c in data["comments"] if c["all_annotations"] is not None]
+        assert len(annotated) >= 1
+        first_ann = annotated[0]["all_annotations"][0]
+        assert "annotator_name" in first_ann
+
+
+class TestConflictReopening:
+    def test_reannotation_reabre_conflito_resolvido(
+        self, client, db, auth_as_user, setup_data, second_user
+    ):
+        """Re-anotacao apos resolucao reabre o conflito."""
+        comment = setup_data["comments"][0]
+
+        # User A anota humano
+        client.post(
+            "/annotate",
+            json={
+                "comment_db_id": str(comment.id),
+                "label": "humano",
+            },
+        )
+
+        # User B anota bot -> conflito criado
+        app.dependency_overrides[get_current_user] = lambda: second_user
+        client.post(
+            "/annotate",
+            json={
+                "comment_db_id": str(comment.id),
+                "label": "bot",
+                "justificativa": "Spam.",
+            },
+        )
+
+        # Resolver conflito manualmente no banco
+        conflict = db.query(AnnotationConflict).filter_by(comment_id=comment.id).first()
+        conflict.status = "resolved"
+        conflict.resolved_label = "bot"
+        db.commit()
+
+        # User B re-anota bot (mesma label, mas A=humano)
+        # Labels divergem: A=humano vs B=bot -> reabre
+        resp = client.post(
+            "/annotate",
+            json={
+                "comment_db_id": str(comment.id),
+                "label": "bot",
+                "justificativa": "Confirmo spam.",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["conflict_created"] is True
+
+        db.refresh(conflict)
+        assert conflict.status == "pending"
+        assert conflict.resolved_by is None
+
+
+class TestGetAllProgress:
+    def test_all_progress_retorna_dados_por_anotador(
+        self,
+        client,
+        db,
+        auth_as_admin,
+        admin_user,
+        regular_user,
+        setup_data,
+    ):
+        """Admin ve progresso de todos os anotadores."""
+        from models.annotation import Annotation
+
+        comment = setup_data["comments"][0]
+        ann = Annotation(
+            comment_id=comment.id,
+            annotator_id=regular_user.id,
+            label="humano",
+        )
+        db.add(ann)
+        db.commit()
+
+        resp = client.get("/annotate/all-progress")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Deve conter pelo menos o regular_user
+        assert any(p["annotator_name"] == "Usuário Teste" for p in data)
+
+    def test_all_progress_exclui_admin(
+        self, client, db, auth_as_admin, admin_user, setup_data
+    ):
+        """Admin nao aparece como anotador no all-progress."""
+        resp = client.get("/annotate/all-progress")
+        assert resp.status_code == 200
+        data = resp.json()
+        for entry in data:
+            assert entry["annotator_name"] != admin_user.name
+
+    def test_all_progress_requer_admin(self, client, auth_as_user):
+        """Endpoint all-progress requer role admin."""
+        resp = client.get("/annotate/all-progress")
+        assert resp.status_code == 403
+
+
+class TestImportAnnotationsChunk:
+    def test_import_chunk_retorna_totais(self, client, auth_as_user, setup_data):
+        """Import-chunk retorna contadores do batch."""
+        comments = setup_data["comments"]
+        resp = client.post(
+            "/annotate/import-chunk",
+            json={
+                "annotations": [
+                    {
+                        "comment_db_id": str(comments[0].id),
+                        "label": "humano",
+                    },
+                ],
+                "done": True,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_imported"] == 1
+        assert data["chunk_received"] == 1
+        assert data["done"] is True
+
+
+class TestExportWithDatasetFilter:
+    def test_export_json_com_dataset_id(self, client, auth_as_user, setup_data):
+        """Export JSON filtrado por dataset_id inclui metadados."""
+        comment = setup_data["comments"][0]
+        ds = setup_data["dataset"]
+
+        client.post(
+            "/annotate",
+            json={
+                "comment_db_id": str(comment.id),
+                "label": "humano",
+            },
+        )
+
+        resp = client.get(f"/annotate/export?format=json" f"&dataset_id={ds.id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "dataset_id" in data
+        assert "dataset_name" in data
+        assert "video_id" in data
+        assert "annotations" in data
+
+    def test_export_csv_com_dataset_id(self, client, auth_as_user, setup_data):
+        """Export CSV filtrado por dataset_id funciona."""
+        comment = setup_data["comments"][0]
+        ds = setup_data["dataset"]
+
+        client.post(
+            "/annotate",
+            json={
+                "comment_db_id": str(comment.id),
+                "label": "humano",
+            },
+        )
+
+        resp = client.get(f"/annotate/export?format=csv" f"&dataset_id={ds.id}")
+        assert resp.status_code == 200
+        assert "text/csv" in resp.headers["content-type"]
+        lines = resp.text.strip().split("\n")
+        assert lines[0] == "comment_db_id,label,justificativa"
+
+
+# -------------------------------------------------------------------
+# Cobertura adicional — get_all_progress total_comments == 0
+# -------------------------------------------------------------------
+
+
+class TestGetAllProgressZeroComments:
+    def test_dataset_sem_comments_pulado_no_all_progress(
+        self,
+        client,
+        db,
+        auth_as_admin,
+        admin_user,
+        regular_user,
+    ):
+        """Dataset com 0 comentarios e ignorado no all-progress."""
+        col = _make_collection(db, admin_user.id, video_id="vid_empty_prog")
+        # Dataset com entry mas sem comentarios reais
+        ds = Dataset(
+            name=f"empty_ap_{uuid.uuid4().hex[:6]}",
+            collection_id=col.id,
+            criteria_applied=["percentil"],
+            thresholds={},
+            total_users_original=0,
+            total_users_selected=0,
+            created_by=admin_user.id,
+        )
+        db.add(ds)
+        db.commit()
+
+        resp = client.get("/annotate/all-progress")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Dataset sem comments nao aparece
+        ds_ids = [p["dataset_id"] for p in data]
+        assert str(ds.id) not in ds_ids
