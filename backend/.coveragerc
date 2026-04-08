@@ -1,3 +1,6 @@
 [run]
 omit =
     alembic/*
+
+[report]
+fail_under = 90

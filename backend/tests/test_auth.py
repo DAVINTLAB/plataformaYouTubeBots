@@ -160,3 +160,173 @@ def test_refresh_com_access_token_retorna_401(client, db):
         json={"refresh_token": access_token},
     )
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Cobertura adicional — get_current_user edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_expired_token_returns_401_message(client, mocker):
+    """Stub: ExpiredSignatureError retorna detail 'Token expirado.'."""
+    import jwt as pyjwt
+
+    mocker.patch(
+        "services.auth.jwt.decode",
+        side_effect=pyjwt.ExpiredSignatureError,
+    )
+
+    resp = client.get(
+        "/users/",
+        headers={"Authorization": "Bearer expired"},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Token expirado."
+
+
+def test_generic_jwt_error_returns_401(client, mocker):
+    """Stub: PyJWTError genérico retorna 401 credenciais inválidas."""
+    import jwt as pyjwt
+
+    mocker.patch(
+        "services.auth.jwt.decode",
+        side_effect=pyjwt.PyJWTError("bad token"),
+    )
+
+    resp = client.get(
+        "/users/",
+        headers={"Authorization": "Bearer badtoken"},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Credenciais inválidas."
+
+
+def test_token_without_sub_returns_401(client, mocker):
+    """Stub: token sem campo 'sub' retorna 401."""
+    mocker.patch(
+        "services.auth.jwt.decode",
+        return_value={"type": "access"},
+    )
+
+    resp = client.get(
+        "/users/",
+        headers={"Authorization": "Bearer nosub"},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Credenciais inválidas."
+
+
+def test_token_for_nonexistent_user_returns_401(client, mocker):
+    """Stub: token válido mas usuário não existe no banco."""
+    mocker.patch(
+        "services.auth.jwt.decode",
+        return_value={"sub": "ghost_user", "type": "access"},
+    )
+
+    resp = client.get(
+        "/users/",
+        headers={"Authorization": "Bearer valid_but_ghost"},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Credenciais inválidas."
+
+
+def test_token_for_deactivated_user_returns_401(client, db, mocker):
+    """Stub: token válido mas usuário está desativado."""
+    user = User(
+        username="deactivated",
+        name="Deactivated User",
+        hashed_password=get_password_hash("pass1234"),
+        role="user",
+        is_active=False,
+    )
+    db.add(user)
+    db.commit()
+
+    mocker.patch(
+        "services.auth.jwt.decode",
+        return_value={"sub": "deactivated", "type": "access"},
+    )
+
+    resp = client.get(
+        "/users/",
+        headers={"Authorization": "Bearer deactivated_tok"},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Credenciais inválidas."
+
+
+# ---------------------------------------------------------------------------
+# Cobertura adicional — refresh com usuário deletado
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_with_deleted_user_returns_401(client, db):
+    """Refresh token válido mas o usuário foi desativado."""
+    from services.auth import create_refresh_token
+
+    user = User(
+        username="refreshgone",
+        name="Refresh Gone",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+    )
+    db.add(user)
+    db.commit()
+
+    # Gerar refresh token diretamente (evita rate limit)
+    refresh_token = create_refresh_token(
+        data={
+            "sub": user.username,
+            "role": user.role,
+            "name": user.name,
+        }
+    )
+
+    # Desativar o usuário
+    user.is_active = False
+    db.commit()
+
+    resp = client.post(
+        "/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert resp.status_code == 401
+    assert "não encontrado" in resp.json()["detail"].lower() or (
+        "desativado" in resp.json()["detail"].lower()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cobertura adicional — logout
+# ---------------------------------------------------------------------------
+
+
+def test_logout_returns_success(client, db):
+    """POST /auth/logout com token válido retorna mensagem de sucesso."""
+    from services.auth import create_access_token
+
+    user = User(
+        username="logoutuser",
+        name="Logout User",
+        hashed_password=get_password_hash("password123"),
+        role="user",
+    )
+    db.add(user)
+    db.commit()
+
+    # Gerar token diretamente (evita rate limit do login)
+    token = create_access_token(
+        data={
+            "sub": user.username,
+            "role": user.role,
+            "name": user.name,
+        }
+    )
+
+    resp = client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert "Logout" in resp.json()["detail"]
