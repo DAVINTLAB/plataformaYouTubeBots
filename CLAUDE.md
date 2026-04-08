@@ -224,7 +224,7 @@ Arquivo `.github/dependabot.yml` configurado para:
 - Canais não retornados pela YouTube API recebem epoch (1970-01-01) para evitar loop infinito
 - Refresh token (7 dias) no `localStorage`, access token (60min) no `sessionStorage` — interceptor transparente no `http.ts`
 - API keys pessoais e intransferíveis — avisos obrigatórios em CollectPage, UsersPage e CreateUserModal
-- **Cards de instrução obrigatórios em páginas de US**: toda página de US deve orientar o usuário em cada etapa do fluxo — use `<StepsCard>` no estado inicial, notice `bg-davint-50` durante processamento ativo, banner `bg-yellow-50` para estados interrompidos, CTA claro ao concluir. Ver `.claude/frontend.md` § "Cards de instrução por etapa"
+- **Cards de instrução obrigatórios em páginas de US**: toda página de US deve orientar o usuário em cada etapa do fluxo — use `<StepsCard>` no estado inicial, notice `bg-davint-50` durante processamento ativo, banner `bg-yellow-50` para estados interrompidos, CTA claro ao concluir. Ver `.claude/padroes/frontend.md` § "Cards de instrução por etapa"
 
 ## Import/Export de dados
 
